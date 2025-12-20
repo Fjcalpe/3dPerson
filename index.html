@@ -3,16 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Juego 3D - Golden Corridor</title>
+    <title>Juego 3D - Sombras Corregidas</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        
+        /* Estilos del Panel de Control */
+        #controls-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            z-index: 100;
+            border: 1px solid #444;
+        }
+        
+        .control-group {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .control-group label {
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        input[type=range] { width: 100%; cursor: pointer; }
+        input[type=color] { width: 100%; height: 30px; border: none; cursor: pointer; }
+
         #info {
             position: absolute;
             top: 10px;
-            width: 100%;
-            text-align: center;
+            left: 20px;
             color: white;
-            font-family: sans-serif;
             pointer-events: none;
             text-shadow: 1px 1px 2px black;
             z-index: 10;
@@ -20,7 +49,38 @@
     </style>
 </head>
 <body>
-    <div id="info">Escenario: Luz Dorada Frontal + Bake Cian</div>
+    <div id="info">Mover: W, A, S, D</div>
+
+    <div id="controls-container">
+        <h3 style="margin-top:0; border-bottom:1px solid #555; padding-bottom:10px;">Ajustes de Luz</h3>
+        
+        <div class="control-group">
+            <label>Sol Vertical (Elevación) <span id="val-vert">35°</span></label>
+            <input type="range" id="input-vert" min="0" max="90" value="35">
+        </div>
+
+        <div class="control-group">
+            <label>Sol Horizontal (Rotación) <span id="val-horiz">215°</span></label>
+            <input type="range" id="input-horiz" min="0" max="360" value="215">
+        </div>
+
+        <div class="control-group">
+            <label>Intensidad Sol <span id="val-int">3.3</span></label>
+            <input type="range" id="input-int" min="0" max="10" step="0.1" value="3.3">
+        </div>
+
+        <div class="control-group">
+            <label>Color Sol</label>
+            <input type="color" id="input-color" value="#ffeeb1">
+        </div>
+
+        <div style="border-top:1px solid #555; margin: 10px 0;"></div>
+
+        <div class="control-group">
+            <label>Luz Ambiente (Relleno) <span id="val-amb">1.05</span></label>
+            <input type="range" id="input-amb" min="0" max="2" step="0.05" value="1.05">
+        </div>
+    </div>
 
     <script type="importmap">
         {
@@ -34,116 +94,206 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+        // --- VARIABLES GLOBALES ---
+        let mixer; 
+        let playerContainer; 
+        const clock = new THREE.Clock();
+        
+        const moveSpeed = 5.0;
+        const rotationSpeed = 8.0; 
+
+        // Vector para almacenar la posición relativa del sol respecto al jugador
+        let sunOffset = new THREE.Vector3(); 
+
+        const keyStates = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
 
         // 1. ESCENA
         const scene = new THREE.Scene();
-        // Atmósfera dorada/marrón
         const atmosphereColor = 0x110800; 
         scene.background = new THREE.Color(atmosphereColor);
-        scene.fog = new THREE.Fog(atmosphereColor, 15, 60); 
+        scene.fog = new THREE.Fog(atmosphereColor, 10, 60); // Niebla un poco más lejos
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 2.5, 8); 
-
+        
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-        
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0; 
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         
+        // Configuración de sombras global
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Sombras suaves
 
         document.body.appendChild(renderer.domElement);
 
-        // 2. ILUMINACIÓN
-        
+        // 2. INPUTS JUGADOR
+        document.addEventListener('keydown', (e) => { if(keyStates.hasOwnProperty(e.code)) keyStates[e.code] = true; });
+        document.addEventListener('keyup', (e) => { if(keyStates.hasOwnProperty(e.code)) keyStates[e.code] = false; });
+
+        // 3. ILUMINACIÓN (Inicial)
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
-        // --- SOL DORADO (Posición ajustada) ---
-        const sunLight = new THREE.DirectionalLight(0xffaa33, 3.0); 
-        
-        // NUEVA POSICIÓN:
-        // x: -15 (Ligeramente a la izquierda)
-        // y: 10  (Bajo, pero suficiente para saltar el primer muro)
-        // z: 40  (Muy atrás de la cámara, para iluminar hacia adelante)
-        sunLight.position.set(-15, 10, 40); 
-        
+        // --- CORRECCIÓN DE SOMBRAS ---
+        const sunLight = new THREE.DirectionalLight(0xffeeb1, 3.5); 
         sunLight.castShadow = true;
         
-        // Optimizamos la caja de sombras para que sea larga y estrecha, cubriendo el pasillo
-        sunLight.shadow.mapSize.set(2048, 2048); 
-        sunLight.shadow.camera.left = -20;
-        sunLight.shadow.camera.right = 20;
-        sunLight.shadow.camera.top = 20;
-        sunLight.shadow.camera.bottom = -10;
-        sunLight.shadow.camera.far = 100; // Aseguramos que llegue al fondo
-        sunLight.shadow.bias = -0.0005;
+        // 1. Aumentamos resolución para evitar "pixelación" en los bordes
+        sunLight.shadow.mapSize.set(4096, 4096); 
+        
+        // 2. Aumentamos la caja de proyección (Frustum) para que no corte sombras laterales
+        const d = 50; // Antes era 30 o 20, aumentamos a 50 metros a cada lado
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        
+        // 3. Ajustamos profundidad
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 150; 
+        
+        // 4. Ajustes de BIAS (Crucial para eliminar las manchas negras y el "acne")
+        sunLight.shadow.bias = -0.0001; 
+        sunLight.shadow.normalBias = 0.02; // Ayuda mucho con modelos curvos como el personaje
 
         scene.add(sunLight);
+        // Importante: Agregamos el target a la escena para poder moverlo
+        scene.add(sunLight.target); 
 
-        // Luz de relleno cálida tenue
-        const hemiLight = new THREE.HemisphereLight(0xffaa33, 0x000000, 0.1);
+        // Luz Ambiente
+        const hemiLight = new THREE.HemisphereLight(0xffeeb1, 0x000000, 0.2);
         scene.add(hemiLight);
 
+        // --- LÓGICA DE CONTROLES DE LUZ ---
+        const uiElements = {
+            vert: document.getElementById('input-vert'),
+            horiz: document.getElementById('input-horiz'),
+            int: document.getElementById('input-int'),
+            color: document.getElementById('input-color'),
+            amb: document.getElementById('input-amb'),
+            txtVert: document.getElementById('val-vert'),
+            txtHoriz: document.getElementById('val-horiz'),
+            txtInt: document.getElementById('val-int'),
+            txtAmb: document.getElementById('val-amb')
+        };
 
-        // 3. CARGA
+        const sunDistance = 50; // Distancia orbital del sol (más lejos para sombras más estables)
+
+        function calculateSunOffset() {
+            // Calculamos solo el vector relativo (offset) basado en los sliders
+            const phi = THREE.MathUtils.degToRad(90 - uiElements.vert.value); 
+            const theta = THREE.MathUtils.degToRad(uiElements.horiz.value);   
+            
+            const x = sunDistance * Math.sin(phi) * Math.sin(theta);
+            const y = sunDistance * Math.cos(phi);
+            const z = sunDistance * Math.sin(phi) * Math.cos(theta);
+
+            sunOffset.set(x, y, z); // Guardamos el vector
+        }
+
+        function updateLightProperties() {
+            // Actualizar intensidad y color
+            sunLight.intensity = parseFloat(uiElements.int.value);
+            sunLight.color.set(uiElements.color.value);
+            hemiLight.intensity = parseFloat(uiElements.amb.value);
+            hemiLight.color.set(uiElements.color.value);
+
+            // Actualizar textos UI
+            uiElements.txtVert.innerText = uiElements.vert.value + "°";
+            uiElements.txtHoriz.innerText = uiElements.horiz.value + "°";
+            uiElements.txtInt.innerText = uiElements.int.value;
+            uiElements.txtAmb.innerText = uiElements.amb.value;
+
+            // Recalcular el offset geométrico
+            calculateSunOffset();
+        }
+
+        Object.values(uiElements).forEach(el => {
+            if(el.tagName === 'INPUT') {
+                el.addEventListener('input', updateLightProperties);
+            }
+        });
+
+        // Inicialización
+        calculateSunOffset();
+        updateLightProperties();
+
+
+        // 4. CARGA DE ASSETS
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
 
+        // Escenario
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; 
         lightmapTexture.channel = 1; 
 
-        loader.load(
-            './modulo_1.gltf', 
-            function (gltf) {
-                const originalModule = gltf.scene;
-                const box = new THREE.Box3().setFromObject(originalModule);
-                const size = new THREE.Vector3();
-                box.getSize(size);
+        loader.load('./modulo_1.gltf', function (gltf) {
+            const originalModule = gltf.scene;
+            const box = new THREE.Box3().setFromObject(originalModule);
+            const size = new THREE.Vector3();
+            box.getSize(size);
 
-                originalModule.traverse((child) => {
-                    if (child.isMesh) {
-                        // Lightmap (Bake Cian)
-                        child.material.lightMap = lightmapTexture;
-                        child.material.lightMapIntensity = 1.0; 
-                        child.material.aoMap = lightmapTexture;
-                        child.material.aoMapIntensity = 1.0;
-                        child.material.envMapIntensity = 0.1; 
-                        child.material.side = THREE.DoubleSide;
-
-                        // Sombras dinámicas para el Sol
-                        child.castShadow = true; 
-                        child.receiveShadow = true;
-                    }
-                });
-
-                // CLONADO
-                const numberOfModules = 3; 
-                for (let i = 0; i < numberOfModules; i++) {
-                    let moduleInstance;
-                    if (i === 0) moduleInstance = originalModule;
-                    else moduleInstance = originalModule.clone();
-
-                    moduleInstance.position.z = - (i * size.z);
-                    moduleInstance.updateMatrix();
-                    moduleInstance.matrixAutoUpdate = false;
-                    scene.add(moduleInstance);
+            originalModule.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.lightMap = lightmapTexture;
+                    child.material.lightMapIntensity = 1.0; 
+                    child.material.aoMap = lightmapTexture;
+                    child.material.aoMapIntensity = 1.0;
+                    child.material.envMapIntensity = 0.1; 
+                    child.material.side = THREE.DoubleSide;
+                    child.castShadow = true; 
+                    child.receiveShadow = true;
                 }
-                
-                addDecoLights(originalModule, size.z);
+            });
 
-                document.getElementById('info').innerText = "Pasillo iluminado por el sol poniente.";
-            },
-            undefined,
-            function (error) { console.error(error); }
-        );
+            const numberOfModules = 10; // Aumentamos módulos para testear sombras largas
+            for (let i = 0; i < numberOfModules; i++) {
+                let moduleInstance;
+                if (i === 0) moduleInstance = originalModule;
+                else moduleInstance = originalModule.clone();
+                moduleInstance.position.z = - (i * size.z);
+                scene.add(moduleInstance);
+            }
+            addDecoLights(originalModule, size.z);
+        });
+
+        // Personaje
+        loader.load('./GIRLrun.gltf', function (gltf) {
+            const rawMesh = gltf.scene;
+            
+            playerContainer = new THREE.Group();
+            playerContainer.position.set(0, 0, 0);
+            scene.add(playerContainer);
+
+            const box = new THREE.Box3().setFromObject(rawMesh);
+            const center = box.getCenter(new THREE.Vector3());
+            const bottomY = box.min.y;
+
+            rawMesh.position.x = -center.x;
+            rawMesh.position.z = -center.z;
+            rawMesh.position.y = -bottomY; 
+
+            playerContainer.add(rawMesh);
+
+            rawMesh.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            if (gltf.animations && gltf.animations.length > 0) {
+                mixer = new THREE.AnimationMixer(rawMesh);
+                const action = mixer.clipAction(gltf.animations[0]);
+                action.play();
+                mixer.timeScale = 0; 
+            }
+        });
 
         function addDecoLights(module, lengthZ) {
              const positions = [
@@ -154,7 +304,6 @@
             ];
             const bulbMat = new THREE.MeshBasicMaterial({ color: 0xccffff });
             const bulbGeo = new THREE.SphereGeometry(0.1, 8, 8);
-
             positions.forEach(pos => {
                 const bulb = new THREE.Mesh(bulbGeo, bulbMat);
                 bulb.position.set(pos.x, 2.9, pos.z); 
@@ -162,14 +311,51 @@
             });
         }
 
-        // 4. ANIMACIÓN
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.target.set(0, 1, -10); // Miramos más al fondo
-
+        // 5. ANIMACIÓN
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            const delta = clock.getDelta();
+            
+            if (playerContainer) {
+                const direction = new THREE.Vector3(0, 0, 0);
+
+                if (keyStates['KeyW']) direction.z -= 1;
+                if (keyStates['KeyS']) direction.z += 1;
+                if (keyStates['KeyA']) direction.x -= 1;
+                if (keyStates['KeyD']) direction.x += 1;
+
+                if (direction.length() > 0) {
+                    direction.normalize();
+                    playerContainer.position.addScaledVector(direction, moveSpeed * delta);
+
+                    const targetAngle = Math.atan2(direction.x, direction.z);
+                    const targetQuaternion = new THREE.Quaternion();
+                    targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
+                    playerContainer.quaternion.slerp(targetQuaternion, rotationSpeed * delta);
+
+                    if (mixer) mixer.timeScale = 1.0;
+                } else {
+                    if (mixer) mixer.timeScale = 0;
+                }
+
+                // --- LÓGICA DE LUCES QUE SIGUEN AL JUGADOR ---
+                // Movemos el target de la luz para que coincida con la posición Z del jugador
+                // (Mantenemos X en 0 para que la luz rote alrededor del centro del pasillo, o playerContainer.position.x si prefieres)
+                sunLight.target.position.set(0, 0, playerContainer.position.z);
+                sunLight.target.updateMatrixWorld();
+
+                // Movemos la fuente de luz basándonos en el offset calculado (slider) + posición del jugador
+                sunLight.position.copy(sunLight.target.position).add(sunOffset);
+
+
+                // --- CÁMARA ---
+                const cameraOffset = new THREE.Vector3(0, 3.5, 3.0);
+                const targetCamPos = playerContainer.position.clone().add(cameraOffset);
+                camera.position.lerp(targetCamPos, 0.25);
+                camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.4, playerContainer.position.z);
+            }
+
+            if (mixer) mixer.update(delta);
             renderer.render(scene, camera);
         }
 
