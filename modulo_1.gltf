@@ -7,6 +7,9 @@
 		"KHR_materials_emissive_strength",
 		"EXT_texture_webp"
 	],
+	"extensionsRequired":[
+		"EXT_texture_webp"
+	],
 	"scene":0,
 	"scenes":[
 		{
@@ -503,8 +506,15 @@
 					"source":0
 				}
 			},
-			"sampler":0,
-			"source":1
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":1
+				}
+			},
+			"sampler":0
 		},
 		{
 			"extensions":{
@@ -512,8 +522,15 @@
 					"source":2
 				}
 			},
-			"sampler":0,
-			"source":3
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":3
+				}
+			},
+			"sampler":0
 		},
 		{
 			"extensions":{
@@ -521,8 +538,15 @@
 					"source":4
 				}
 			},
-			"sampler":0,
-			"source":5
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":5
+				}
+			},
+			"sampler":0
 		},
 		{
 			"extensions":{
@@ -530,8 +554,15 @@
 					"source":6
 				}
 			},
-			"sampler":0,
-			"source":7
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":7
+				}
+			},
+			"sampler":0
 		},
 		{
 			"extensions":{
@@ -539,8 +570,31 @@
 					"source":8
 				}
 			},
-			"sampler":0,
-			"source":9
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":9
+				}
+			},
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":7
+				}
+			},
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":8
+				}
+			},
+			"sampler":0
 		},
 		{
 			"extensions":{
@@ -548,8 +602,15 @@
 					"source":10
 				}
 			},
-			"sampler":0,
-			"source":11
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":11
+				}
+			},
+			"sampler":0
 		},
 		{
 			"extensions":{
@@ -557,80 +618,7 @@
 					"source":12
 				}
 			},
-			"sampler":0,
-			"source":13
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":14
-				}
-			},
-			"sampler":0,
-			"source":15
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":16
-				}
-			},
-			"sampler":0,
-			"source":17
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":18
-				}
-			},
-			"sampler":0,
-			"source":19
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":14
-				}
-			},
-			"sampler":0,
-			"source":15
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":16
-				}
-			},
-			"sampler":0,
-			"source":17
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":20
-				}
-			},
-			"sampler":0,
-			"source":21
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":22
-				}
-			},
-			"sampler":0,
-			"source":23
-		},
-		{
-			"extensions":{
-				"EXT_texture_webp":{
-					"source":24
-				}
-			},
-			"sampler":0,
-			"source":25
+			"sampler":0
 		}
 	],
 	"images":[
@@ -640,19 +628,9 @@
 			"uri":"suelo%20planchas%20muros%20Normal%20bevel%20rejillas.webp"
 		},
 		{
-			"mimeType":"image/jpeg",
-			"name":"suelo planchas muros Normal bevel rejillas",
-			"uri":"suelo%20planchas%20muros%20Normal%20bevel%20rejillas.jpg"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"suelo planchas muros BasedColor",
 			"uri":"suelo%20planchas%20muros%20BasedColor.webp"
-		},
-		{
-			"mimeType":"image/jpeg",
-			"name":"suelo planchas muros BasedColor",
-			"uri":"suelo%20planchas%20muros%20BasedColor.jpg"
 		},
 		{
 			"mimeType":"image/webp",
@@ -660,19 +638,9 @@
 			"uri":"suelo%20planchas%20muros%20Metallic-suelo%20planchas%20muros%20Roughness.webp"
 		},
 		{
-			"mimeType":"image/png",
-			"name":"suelo planchas muros Metallic-suelo planchas muros Roughness",
-			"uri":"suelo%20planchas%20muros%20Metallic-suelo%20planchas%20muros%20Roughness.png"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"Poliigon_ConcreteFloorPoured_7656_BaseColor",
 			"uri":"Poliigon_ConcreteFloorPoured_7656_BaseColor.webp"
-		},
-		{
-			"mimeType":"image/jpeg",
-			"name":"Poliigon_ConcreteFloorPoured_7656_BaseColor",
-			"uri":"Poliigon_ConcreteFloorPoured_7656_BaseColor.jpg"
 		},
 		{
 			"mimeType":"image/webp",
@@ -680,19 +648,9 @@
 			"uri":"cemento%20diffuse%20color.webp"
 		},
 		{
-			"mimeType":"image/png",
-			"name":"cemento diffuse color",
-			"uri":"cemento%20diffuse%20color.png"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"Poliigon_ConcreteFloorPoured_7656_BaseColor",
 			"uri":"Poliigon_ConcreteFloorPoured_7656_BaseColor-1.webp"
-		},
-		{
-			"mimeType":"image/png",
-			"name":"Poliigon_ConcreteFloorPoured_7656_BaseColor",
-			"uri":"Poliigon_ConcreteFloorPoured_7656_BaseColor.png"
 		},
 		{
 			"mimeType":"image/webp",
@@ -700,19 +658,9 @@
 			"uri":"foso%20marco%20y%20puerta_marco_Normal%20bevel.webp"
 		},
 		{
-			"mimeType":"image/jpeg",
-			"name":"foso marco y puerta_marco_Normal bevel",
-			"uri":"foso%20marco%20y%20puerta_marco_Normal%20bevel.jpg"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"foso marco y puerta_marco_BaseColor",
 			"uri":"foso%20marco%20y%20puerta_marco_BaseColor.webp"
-		},
-		{
-			"mimeType":"image/png",
-			"name":"foso marco y puerta_marco_BaseColor",
-			"uri":"foso%20marco%20y%20puerta_marco_BaseColor.png"
 		},
 		{
 			"mimeType":"image/webp",
@@ -720,19 +668,9 @@
 			"uri":"foso%20marco%20y%20puerta_marco_Metallic-foso%20marco%20y%20puerta_marco_Roughness.webp"
 		},
 		{
-			"mimeType":"image/png",
-			"name":"foso marco y puerta_marco_Metallic-foso marco y puerta_marco_Roughness",
-			"uri":"foso%20marco%20y%20puerta_marco_Metallic-foso%20marco%20y%20puerta_marco_Roughness.png"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"foso marco y puerta_marco_Normal bevel",
 			"uri":"foso%20marco%20y%20puerta_marco_Normal%20bevel-1.webp"
-		},
-		{
-			"mimeType":"image/jpeg",
-			"name":"foso marco y puerta_marco_Normal bevel",
-			"uri":"foso%20marco%20y%20puerta_marco_Normal%20bevel-1.jpg"
 		},
 		{
 			"mimeType":"image/webp",
@@ -740,29 +678,14 @@
 			"uri":"muro%20paneles%202%20NORMAL%20bevel%20y%20grietas.webp"
 		},
 		{
-			"mimeType":"image/jpeg",
-			"name":"muro paneles 2 NORMAL bevel y grietas",
-			"uri":"muro%20paneles%202%20NORMAL%20bevel%20y%20grietas.jpg"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"muro paneles 2 BaseColor",
 			"uri":"muro%20paneles%202%20BaseColor.webp"
 		},
 		{
-			"mimeType":"image/png",
-			"name":"muro paneles 2 BaseColor",
-			"uri":"muro%20paneles%202%20BaseColor.png"
-		},
-		{
 			"mimeType":"image/webp",
 			"name":"muro paneles 2 Metallic-muro paneles 2 Roughness fuerte",
 			"uri":"muro%20paneles%202%20Metallic-muro%20paneles%202%20Roughness%20fuerte.webp"
-		},
-		{
-			"mimeType":"image/png",
-			"name":"muro paneles 2 Metallic-muro paneles 2 Roughness fuerte",
-			"uri":"muro%20paneles%202%20Metallic-muro%20paneles%202%20Roughness%20fuerte.png"
 		}
 	],
 	"accessors":[
