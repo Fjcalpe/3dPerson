@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Juego 3D - Mobile Touch</title>
+    <title>Juego 3D - Mobile Fix</title>
     <style>
         body { 
             margin: 0; 
             overflow: hidden; 
             background-color: #000; 
             font-family: sans-serif;
-            touch-action: none; /* Previene zoom/scroll al tocar */
+            touch-action: none; 
             user-select: none;
             -webkit-user-select: none;
         }
@@ -25,7 +25,7 @@
             z-index: 10;
         }
 
-        /* --- ESTILOS DE LOS BOTONES TÁCTILES --- */
+        /* --- BOTONES TÁCTILES --- */
         #mobile-controls {
             position: absolute;
             bottom: 30px;
@@ -36,10 +36,7 @@
             z-index: 100;
         }
 
-        .control-row {
-            display: flex;
-            justify-content: center;
-        }
+        .control-row { display: flex; justify-content: center; }
 
         .touch-btn {
             width: 70px;
@@ -57,25 +54,17 @@
             cursor: pointer;
             backdrop-filter: blur(4px);
             transition: background 0.1s;
-            touch-action: none; /* Importante para móviles */
+            touch-action: none; 
         }
 
         .touch-btn:active, .touch-btn.active {
-            background: rgba(255, 238, 177, 0.5); /* Color dorado al pulsar */
+            background: rgba(255, 238, 177, 0.5);
             transform: scale(0.95);
         }
-
-        /* Espaciador para la fila del medio (A - D) */
-        .spacer {
-            width: 70px; 
-            height: 70px; 
-            margin: 5px;
-        }
-
     </style>
 </head>
 <body>
-    <div id="info">Controles Táctiles Activados</div>
+    <div id="info">Cámara Estabilizada</div>
 
     <div id="mobile-controls">
         <div class="control-row">
@@ -102,7 +91,7 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-        // --- VARIABLES GLOBALES ---
+        // --- VARIABLES ---
         let mixer; 
         let playerContainer; 
         const clock = new THREE.Clock();
@@ -110,10 +99,7 @@
         const moveSpeed = 5.0;
         const rotationSpeed = 8.0; 
 
-        // Vector para la luz
         let sunOffset = new THREE.Vector3(); 
-
-        // Estado de Inputs (Teclado + Touch compartidos)
         const keyStates = { KeyW: false, KeyA: false, KeyS: false, KeyD: false };
 
         // 1. ESCENA
@@ -126,7 +112,7 @@
         
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limitar densidad de píxeles ayuda al rendimiento móvil
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0; 
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -135,67 +121,42 @@
 
         document.body.appendChild(renderer.domElement);
 
-        // 2. INPUTS (TECLADO + TOUCH)
-        
-        // Teclado (para depurar en PC)
+        // 2. INPUTS
         document.addEventListener('keydown', (e) => { if(keyStates.hasOwnProperty(e.code)) keyStates[e.code] = true; });
         document.addEventListener('keyup', (e) => { if(keyStates.hasOwnProperty(e.code)) keyStates[e.code] = false; });
 
-        // Función auxiliar para asignar eventos touch
         function assignTouch(elementId, keyCode) {
             const el = document.getElementById(elementId);
-            
-            // Eventos Touch (Móvil)
             el.addEventListener('touchstart', (e) => { 
-                e.preventDefault(); // Evita scroll
+                e.preventDefault(); 
                 keyStates[keyCode] = true; 
-                el.classList.add('active'); // Feedback visual
+                el.classList.add('active'); 
             }, { passive: false });
-            
             el.addEventListener('touchend', (e) => { 
                 e.preventDefault();
                 keyStates[keyCode] = false; 
                 el.classList.remove('active');
             }, { passive: false });
-
-            // Eventos Ratón (Para probar en PC con clicks)
-            el.addEventListener('mousedown', (e) => {
-                keyStates[keyCode] = true;
-                el.classList.add('active');
-            });
-            el.addEventListener('mouseup', (e) => {
-                keyStates[keyCode] = false;
-                el.classList.remove('active');
-            });
-            el.addEventListener('mouseleave', (e) => {
-                 keyStates[keyCode] = false;
-                 el.classList.remove('active');
-            });
         }
-
         assignTouch('btn-w', 'KeyW');
         assignTouch('btn-a', 'KeyA');
         assignTouch('btn-s', 'KeyS');
         assignTouch('btn-d', 'KeyD');
 
-
-        // 3. ILUMINACIÓN (VALORES FIJOS DEFINITIVOS)
+        // 3. ILUMINACIÓN
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
         scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
         const FIXED_SETTINGS = {
-            vert: 35,
-            horiz: 215,
-            intensity: 3.3,
-            amb: 1.05,
-            color: 0xffeeb1
+            vert: 35, horiz: 215, intensity: 3.3, amb: 1.05, color: 0xffeeb1
         };
 
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
         
-        // Configuración de sombras PRO (la que arreglamos antes)
-        sunLight.shadow.mapSize.set(4096, 4096); 
+        // OPTIMIZACIÓN MÓVIL: Bajamos a 2048 para evitar tirones de GPU
+        sunLight.shadow.mapSize.set(2048, 2048); 
+        
         const d = 50; 
         sunLight.shadow.camera.left = -d;
         sunLight.shadow.camera.right = d;
@@ -212,7 +173,6 @@
         const hemiLight = new THREE.HemisphereLight(FIXED_SETTINGS.color, 0x000000, FIXED_SETTINGS.amb);
         scene.add(hemiLight);
 
-        // Calculamos el offset de luz una sola vez
         const sunDistance = 50;
         const phi = THREE.MathUtils.degToRad(90 - FIXED_SETTINGS.vert); 
         const theta = THREE.MathUtils.degToRad(FIXED_SETTINGS.horiz);   
@@ -222,11 +182,9 @@
             sunDistance * Math.sin(phi) * Math.cos(theta)
         );
 
-
-        // 4. CARGA DE ASSETS
+        // 4. ASSETS
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
-
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; 
         lightmapTexture.channel = 1; 
@@ -250,11 +208,8 @@
                 }
             });
 
-            const numberOfModules = 12; // Un poco más de pasillo
-            for (let i = 0; i < numberOfModules; i++) {
-                let moduleInstance;
-                if (i === 0) moduleInstance = originalModule;
-                else moduleInstance = originalModule.clone();
+            for (let i = 0; i < 12; i++) {
+                let moduleInstance = (i === 0) ? originalModule : originalModule.clone();
                 moduleInstance.position.z = - (i * size.z);
                 scene.add(moduleInstance);
             }
@@ -264,25 +219,16 @@
         loader.load('./GIRLrun.gltf', function (gltf) {
             const rawMesh = gltf.scene;
             playerContainer = new THREE.Group();
-            playerContainer.position.set(0, 0, 0);
             scene.add(playerContainer);
 
             const box = new THREE.Box3().setFromObject(rawMesh);
             const center = box.getCenter(new THREE.Vector3());
             const bottomY = box.min.y;
-
-            rawMesh.position.x = -center.x;
-            rawMesh.position.z = -center.z;
-            rawMesh.position.y = -bottomY; 
+            rawMesh.position.set(-center.x, -bottomY, -center.z);
 
             playerContainer.add(rawMesh);
 
-            rawMesh.traverse((child) => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                }
-            });
+            rawMesh.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }});
 
             if (gltf.animations && gltf.animations.length > 0) {
                 mixer = new THREE.AnimationMixer(rawMesh);
@@ -294,10 +240,8 @@
 
         function addDecoLights(module, lengthZ) {
              const positions = [
-                { x: -3.8, z: -lengthZ * 0.20 },
-                { x:  3.8, z: -lengthZ * 0.20 },
-                { x: -3.8, z: -lengthZ * 0.80 },
-                { x:  3.8, z: -lengthZ * 0.80 }
+                { x: -3.8, z: -lengthZ * 0.20 }, { x:  3.8, z: -lengthZ * 0.20 },
+                { x: -3.8, z: -lengthZ * 0.80 }, { x:  3.8, z: -lengthZ * 0.80 }
             ];
             const bulbMat = new THREE.MeshBasicMaterial({ color: 0xccffff });
             const bulbGeo = new THREE.SphereGeometry(0.1, 8, 8);
@@ -308,14 +252,15 @@
             });
         }
 
-        // 5. ANIMACIÓN
+        // 5. ANIMACIÓN Y FIX DE JITTER
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta();
+            
+            // Limitamos el delta para evitar saltos enormes si hay un lagazo
+            const delta = Math.min(clock.getDelta(), 0.1); 
             
             if (playerContainer) {
                 const direction = new THREE.Vector3(0, 0, 0);
-
                 if (keyStates['KeyW']) direction.z -= 1;
                 if (keyStates['KeyS']) direction.z += 1;
                 if (keyStates['KeyA']) direction.x -= 1;
@@ -340,10 +285,16 @@
                 sunLight.target.updateMatrixWorld();
                 sunLight.position.copy(sunLight.target.position).add(sunOffset);
 
-                // Cámara
+                // --- FIX CÁMARA ANTI-TEMBLOR ---
                 const cameraOffset = new THREE.Vector3(0, 3.5, 3.0);
                 const targetCamPos = playerContainer.position.clone().add(cameraOffset);
-                camera.position.lerp(targetCamPos, 0.25);
+                
+                // Usamos Damping Exponencial independiente del frame rate
+                // factor = 1 - Math.exp( -speed * delta )
+                // speed: 5.0 es suave, 10.0 es rápido, 20.0 es muy pegado
+                const smoothFactor = 1.0 - Math.exp(-10.0 * delta); 
+                
+                camera.position.lerp(targetCamPos, smoothFactor);
                 camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.4, playerContainer.position.z);
             }
 
