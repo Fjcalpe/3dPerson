@@ -3,18 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Pivot FIX</title>
+    <title>Juego 3D - Final 58 deg</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
             font-family: sans-serif; touch-action: none; user-select: none; -webkit-user-select: none;
         }
-        #info {
-            position: absolute; top: 10px; width: 100%; text-align: center;
-            color: rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 10;
+        
+        #settings-ui {
+            position: absolute; top: 10px; right: 10px;
+            background: rgba(0, 0, 0, 0.6); color: white;
+            padding: 10px; border-radius: 8px;
+            text-align: right; z-index: 200;
         }
+        #settings-ui label { font-size: 12px; display: block; margin-bottom: 5px; }
+        #settings-ui input { width: 150px; }
 
-        /* --- JOYSTICK VIRTUAL --- */
+        #info {
+            position: absolute; top: 10px; left: 10px;
+            color: rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 10;
+            text-align: left;
+        }
+        .ui-element { pointer-events: auto; }
+
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
             width: 120px; height: 120px;
@@ -32,7 +43,6 @@
             pointer-events: none; 
         }
 
-        /* --- BOTONES DE ACCIÓN --- */
         #actions-container {
             position: absolute; bottom: 30px; right: 30px;
             display: flex; flex-direction: column; gap: 15px; z-index: 100;
@@ -57,18 +67,29 @@
     </style>
 </head>
 <body>
-    <div id="info">Corrección de Pivote + Disparo</div>
-    <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar | P: Disparar | Mouse: Joystick</div>
+    <div id="info">BG: 58° | Fix Acné++</div>
+    
+    <div id="settings-ui" class="ui-element">
+        <label>Rotación Fondo: <span id="bg-rot-val">58°</span></label>
+        <input type="range" id="bg-rot-slider" min="0" max="360" value="58">
+    </div>
 
-    <div id="joystick-container"><div id="joystick-thumb"></div></div>
+    <div id="pc-instructions">WASD: Mover | Arrastrar: Cámara Libre</div>
 
-    <div id="actions-container">
+    <div id="joystick-container" class="ui-element"><div id="joystick-thumb"></div></div>
+
+    <div id="actions-container" class="ui-element">
         <div class="action-btn" id="btn-jump">SALTAR</div>
         <div class="action-btn" id="btn-shoot">DISPARAR</div>
     </div>
 
     <script type="importmap">
-        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
     </script>
 
     <script type="module">
@@ -76,15 +97,13 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-        // --- VARIABLES ---
-        let mixer; 
-        let playerContainer; // ESTE ES EL QUE GIRAREMOS
-        let rawCharacterMesh; // ESTE SOLO LO USAREMOS PARA LA ANIMACION
+        let mixer, playerContainer, rawCharacterMesh, bgMesh; 
         const clock = new THREE.Clock();
         
         const maxMoveSpeed = 8.0; 
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
+        let isMoving = false;
 
         let velocityY = 0;
         const gravity = -25.0;
@@ -95,10 +114,47 @@
         const projectileSpeed = 20.0;
 
         let sunOffset = new THREE.Vector3(); 
-        const FIXED_SETTINGS = { vert: 35, horiz: 215, intensity: 3.3, amb: 1.05, color: 0xffeeb1 };
+        const FIXED_SETTINGS = { vert: 35, horiz: 215, intensity: 3.0, amb: 0.4, color: 0xffeeb1 };
         const keyStates = { w: false, a: false, s: false, d: false };
 
-        // --- INPUTS ---
+        // CÁMARA
+        const defaultCamData = { radius: 3.2, theta: 0.00, phi: 0.60 };
+        let camRadius = defaultCamData.radius;
+        let camTheta = defaultCamData.theta;
+        let camPhi = defaultCamData.phi;
+        let isDraggingCamera = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        const bgSlider = document.getElementById('bg-rot-slider');
+        const bgVal = document.getElementById('bg-rot-val');
+        
+        bgSlider.addEventListener('input', (e) => {
+            if (bgMesh) {
+                const degrees = e.target.value;
+                bgVal.innerText = degrees + '°';
+                const radians = THREE.MathUtils.degToRad(degrees);
+                bgMesh.rotation.y = radians;
+            }
+        });
+
+        document.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.ui-element')) return;
+            isDraggingCamera = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        document.addEventListener('pointermove', (e) => {
+            if (!isDraggingCamera) return;
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+            camTheta -= deltaX * 0.005; 
+            camPhi -= deltaY * 0.005;
+            camPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camPhi));
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        document.addEventListener('pointerup', () => isDraggingCamera = false);
+        document.addEventListener('pointercancel', () => isDraggingCamera = false);
+
+        // Joystick
         let joystickVector = { x: 0, y: 0 }; 
         const joystickContainer = document.getElementById('joystick-container');
         const joystickThumb = document.getElementById('joystick-thumb');
@@ -108,18 +164,14 @@
         const handleJoystick = (e) => {
             if(e.type.startsWith('touch')) e.preventDefault();
             if (!isDraggingJoystick) return;
-
             const rect = joystickContainer.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
-            
             let clientX = (e.touches && e.touches.length) ? e.touches[0].clientX : e.clientX;
             let clientY = (e.touches && e.touches.length) ? e.touches[0].clientY : e.clientY;
-            
             let x = clientX - centerX;
             let y = clientY - centerY;
             let distance = Math.sqrt(x*x + y*y);
-            
             if (distance > maxRadius) {
                 x = (x / distance) * maxRadius;
                 y = (y / distance) * maxRadius;
@@ -128,13 +180,11 @@
             joystickVector.x = x / maxRadius;
             joystickVector.y = y / maxRadius; 
         };
-
         const resetJoystick = () => {
             isDraggingJoystick = false;
             joystickVector = { x: 0, y: 0 };
             joystickThumb.style.transform = `translate(0px, 0px)`;
         };
-
         joystickContainer.addEventListener('mousedown', (e) => { isDraggingJoystick = true; handleJoystick(e); });
         window.addEventListener('mousemove', (e) => { if(isDraggingJoystick) handleJoystick(e); });
         window.addEventListener('mouseup', resetJoystick);
@@ -142,6 +192,7 @@
         joystickContainer.addEventListener('touchmove', handleJoystick);
         joystickContainer.addEventListener('touchend', resetJoystick);
 
+        // Inputs
         document.addEventListener('keydown', (e) => {
             if(e.code==='KeyW') keyStates.w = true;
             if(e.code==='KeyS') keyStates.s = true;
@@ -167,45 +218,62 @@
 
         // --- THREE.JS ---
         const scene = new THREE.Scene();
-        scene.fog = new THREE.Fog(0x000000, 20, 80); 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
+        
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0; 
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2.0)); 
+        
+        renderer.toneMapping = THREE.ACESFilmicToneMapping; 
+        renderer.toneMappingExposure = 1.0;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
+        
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
         const pmremGenerator = new THREE.PMREMGenerator(renderer);
-        scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-        
+        const envTexture = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+        scene.environment = envTexture;
+        scene.environmentIntensity = 0.5; 
+
+        // LUZ SOL
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(2048, 2048); 
         const d = 50; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
-        sunLight.shadow.bias = -0.0005; sunLight.shadow.normalBias = 0.05; 
+        
+        // --- FIX ACNÉ AGRESIVO ---
+        sunLight.shadow.bias = -0.001;  // Más negativo
+        sunLight.shadow.normalBias = 0.1; // Bastante alto para alejar el self-shadowing
         scene.add(sunLight); scene.add(sunLight.target); 
         
         const hemiLight = new THREE.HemisphereLight(FIXED_SETTINGS.color, 0x000000, FIXED_SETTINGS.amb);
         scene.add(hemiLight);
 
         const sunDistance = 50;
-        const phi = THREE.MathUtils.degToRad(90 - FIXED_SETTINGS.vert); 
-        const theta = THREE.MathUtils.degToRad(FIXED_SETTINGS.horiz);   
-        sunOffset.set(sunDistance * Math.sin(phi) * Math.sin(theta), sunDistance * Math.cos(phi), sunDistance * Math.sin(phi) * Math.cos(theta));
+        const phiSun = THREE.MathUtils.degToRad(90 - FIXED_SETTINGS.vert); 
+        const thetaSun = THREE.MathUtils.degToRad(FIXED_SETTINGS.horiz);   
+        sunOffset.set(sunDistance * Math.sin(phiSun) * Math.sin(thetaSun), sunDistance * Math.cos(phiSun), sunDistance * Math.sin(phiSun) * Math.cos(thetaSun));
 
         const loader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
+        
+        // FONDO (58 grados default)
         const bgTexture = textureLoader.load('./bg.webp');
-        const sphereGeo = new THREE.SphereGeometry(500, 60, 40);
-        sphereGeo.scale(-1, 1, 1);
-        const sphereMat = new THREE.MeshBasicMaterial({ map: bgTexture, side: THREE.BackSide, fog: false });
-        scene.add(new THREE.Mesh(sphereGeo, sphereMat));
+        bgTexture.colorSpace = THREE.SRGBColorSpace; 
+        const sphereGeo = new THREE.SphereGeometry(500, 60, 40); 
+        sphereGeo.scale(-1, 1, 1); 
+        const sphereMat = new THREE.MeshBasicMaterial({ 
+            map: bgTexture, side: THREE.DoubleSide, fog: false, depthWrite: false, toneMapped: false 
+        });
+        bgMesh = new THREE.Mesh(sphereGeo, sphereMat);
+        
+        // ROTACIÓN INICIAL 58 GRADOS
+        bgMesh.rotation.y = THREE.MathUtils.degToRad(58);
+        scene.add(bgMesh);
 
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; lightmapTexture.channel = 1; 
@@ -214,33 +282,36 @@
             const size = new THREE.Vector3();
             new THREE.Box3().setFromObject(originalModule).getSize(size);
             originalModule.traverse((child) => { if (child.isMesh) { child.material.lightMap = lightmapTexture; child.material.lightMapIntensity = 1.0; child.material.aoMap = lightmapTexture; child.material.aoMapIntensity = 1.0; child.material.envMapIntensity = 0.1; child.material.side = THREE.DoubleSide; child.castShadow = true; child.receiveShadow = true; } });
-            for (let i = 0; i < 15; i++) { let moduleInstance = (i === 0) ? originalModule : originalModule.clone(); moduleInstance.position.z = - (i * size.z); scene.add(moduleInstance); }
+            
+            for (let i = 0; i < 6; i++) { 
+                let moduleInstance = (i === 0) ? originalModule : originalModule.clone(); 
+                moduleInstance.position.z = - (i * size.z); 
+                scene.add(moduleInstance); 
+            }
             addDecoLights(originalModule, size.z);
         });
 
-        // --- CARGA PERSONAJE Y CORRECCIÓN DE PIVOTE ---
         loader.load('./GIRLrun.gltf', function (gltf) {
             rawCharacterMesh = gltf.scene;
-            
-            // 1. Escalar
             rawCharacterMesh.scale.set(0.7, 0.7, 0.7);
             rawCharacterMesh.updateMatrixWorld(true); 
-
-            // 2. Crear Contenedor (Este será el "Actor" que movemos y rotamos)
             playerContainer = new THREE.Group();
             scene.add(playerContainer);
-
-            // 3. Calcular Centro Geométrico de la malla escalada
             const box = new THREE.Box3().setFromObject(rawCharacterMesh);
             const center = box.getCenter(new THREE.Vector3());
-            
-            // 4. Desplazar la malla DENTRO del contenedor para que su centro esté en (0,0,0) del contenedor
-            // IMPORTANTE: Una vez hecho esto, NO rotamos rawCharacterMesh, rotamos playerContainer
             rawCharacterMesh.position.set(-center.x, -box.min.y, -center.z);
-            
             playerContainer.add(rawCharacterMesh);
-
-            rawCharacterMesh.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }});
+            
+            rawCharacterMesh.traverse((child) => { 
+                if (child.isMesh) { 
+                    child.castShadow = true; 
+                    child.receiveShadow = true; 
+                    if(child.material) {
+                         child.material.roughness = 0.8; 
+                    }
+                }
+            });
+            
             if (gltf.animations && gltf.animations.length > 0) {
                 mixer = new THREE.AnimationMixer(rawCharacterMesh);
                 const action = mixer.clipAction(gltf.animations[0]);
@@ -261,17 +332,11 @@
         function shoot() {
             if (!playerContainer) return;
             const proj = new THREE.Mesh(projectileGeo, projectileMat);
-            
-            // Disparar desde el CONTENEDOR (que está centrado)
             proj.position.copy(playerContainer.position);
             proj.position.y += 1.2; 
-            
-            // Usar la rotación del CONTENEDOR
             const direction = new THREE.Vector3();
-            playerContainer.getWorldDirection(direction); // <--- CORRECCIÓN IMPORTANTE
-            
+            playerContainer.getWorldDirection(direction); 
             proj.quaternion.copy(playerContainer.quaternion);
-            
             proj.userData.velocity = direction.multiplyScalar(projectileSpeed);
             proj.userData.lifeTime = 2.0; 
             scene.add(proj);
@@ -282,8 +347,11 @@
             requestAnimationFrame(animate);
             const delta = Math.min(clock.getDelta(), 0.1); 
             
+            if (bgMesh) {
+                bgMesh.position.copy(camera.position);
+            }
+
             if (playerContainer) {
-                // INPUTS
                 let inputX = joystickVector.x;
                 let inputY = joystickVector.y;
                 if (keyStates.w) inputY -= 1;
@@ -293,40 +361,52 @@
 
                 moveDirection.set(inputX, 0, inputY);
                 const length = moveDirection.length();
-                if (length > 1) { moveDirection.normalize(); currentSpeed = maxMoveSpeed; } 
-                else { currentSpeed = maxMoveSpeed * length; }
+                
+                if (length > 0.1) { 
+                    isMoving = true;
+                    if (length > 1) { moveDirection.normalize(); currentSpeed = maxMoveSpeed; } 
+                    else { currentSpeed = maxMoveSpeed * length; }
+                } else {
+                    isMoving = false;
+                    currentSpeed = 0;
+                }
 
-                if (length > 0.1) {
-                    // Mover el CONTENEDOR
+                if (isMoving) {
                     playerContainer.position.addScaledVector(moveDirection.normalize(), currentSpeed * delta);
 
-                    // Rotar el CONTENEDOR (no la malla interna)
                     const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
                     const targetQuaternion = new THREE.Quaternion();
                     targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
-                    playerContainer.quaternion.slerp(targetQuaternion, 10 * delta); // Slerp para rotación suave del contenedor
+                    playerContainer.quaternion.slerp(targetQuaternion, 10 * delta);
 
                     if (mixer && isGrounded) mixer.timeScale = currentSpeed / maxMoveSpeed;
+                    
+                    let diffTheta = defaultCamData.theta - camTheta;
+                    while (diffTheta > Math.PI) diffTheta -= Math.PI * 2;
+                    while (diffTheta < -Math.PI) diffTheta += Math.PI * 2;
+                    camTheta += diffTheta * 3.0 * delta;
+                    camPhi += (defaultCamData.phi - camPhi) * 3.0 * delta;
+
                 } else {
                     if (mixer) mixer.timeScale = 0;
                 }
 
-                // Físicas
                 velocityY += gravity * delta;
                 playerContainer.position.y += velocityY * delta;
                 if (playerContainer.position.y <= 0) {
                     playerContainer.position.y = 0; velocityY = 0; isGrounded = true;
                 } else { isGrounded = false; if(mixer) mixer.timeScale = 0; }
 
-                // Cámara y Luz siguen al contenedor
+                const camX = camRadius * Math.sin(camPhi) * Math.sin(camTheta);
+                const camY = camRadius * Math.cos(camPhi);
+                const camZ = camRadius * Math.sin(camPhi) * Math.cos(camTheta);
+                const targetCamPos = playerContainer.position.clone().add(new THREE.Vector3(camX, camY, camZ));
+                camera.position.copy(targetCamPos);
+                camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
+
                 sunLight.target.position.set(0, 0, playerContainer.position.z);
                 sunLight.target.updateMatrixWorld();
                 sunLight.position.copy(sunLight.target.position).add(sunOffset);
-
-                const cameraOffset = new THREE.Vector3(0, 2.5, 1.8); 
-                const targetCamPos = playerContainer.position.clone().add(cameraOffset);
-                camera.position.copy(targetCamPos);
-                camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.0, playerContainer.position.z);
             }
 
             for (let i = projectiles.length - 1; i >= 0; i--) {
