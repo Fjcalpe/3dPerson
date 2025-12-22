@@ -11,7 +11,8 @@
 		{
 			"name":"Scene",
 			"nodes":[
-				0
+				0,
+				1
 			]
 		}
 	],
@@ -19,6 +20,10 @@
 		{
 			"mesh":0,
 			"name":"FOSO MARCO.001"
+		},
+		{
+			"mesh":1,
+			"name":"Modulo1 malla colision"
 		}
 	],
 	"materials":[
@@ -221,6 +226,19 @@
 					},
 					"indices":34,
 					"material":6
+				}
+			]
+		},
+		{
+			"name":"Cube",
+			"primitives":[
+				{
+					"attributes":{
+						"POSITION":35,
+						"NORMAL":36,
+						"TEXCOORD_0":37
+					},
+					"indices":38
 				}
 			]
 		}
@@ -629,6 +647,40 @@
 			"componentType":5123,
 			"count":1920,
 			"type":"SCALAR"
+		},
+		{
+			"bufferView":35,
+			"componentType":5126,
+			"count":116,
+			"max":[
+				5.773983001708984,
+				3.3273468017578125,
+				-0.0959014892578125
+			],
+			"min":[
+				-5.783782005310059,
+				0.06746208667755127,
+				-11.765785217285156
+			],
+			"type":"VEC3"
+		},
+		{
+			"bufferView":36,
+			"componentType":5126,
+			"count":116,
+			"type":"VEC3"
+		},
+		{
+			"bufferView":37,
+			"componentType":5126,
+			"count":116,
+			"type":"VEC2"
+		},
+		{
+			"bufferView":38,
+			"componentType":5123,
+			"count":192,
+			"type":"SCALAR"
 		}
 	],
 	"bufferViews":[
@@ -841,6 +893,30 @@
 			"byteLength":3840,
 			"byteOffset":1736748,
 			"target":34963
+		},
+		{
+			"buffer":0,
+			"byteLength":1392,
+			"byteOffset":1740588,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":1392,
+			"byteOffset":1741980,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":928,
+			"byteOffset":1743372,
+			"target":34962
+		},
+		{
+			"buffer":0,
+			"byteLength":384,
+			"byteOffset":1744300,
+			"target":34963
 		}
 	],
 	"samplers":[
@@ -851,7 +927,7 @@
 	],
 	"buffers":[
 		{
-			"byteLength":1740588,
+			"byteLength":1744684,
 			"uri":"modulo_1.bin"
 		}
 	]
