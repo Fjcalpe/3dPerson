@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Gold Master</title>
+    <title>Juego 3D - Raycast Physics Stable</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -12,16 +12,17 @@
         
         #settings-ui {
             position: absolute; top: 10px; right: 10px;
-            background: rgba(0, 0, 0, 0.6); color: white;
-            padding: 10px; border-radius: 8px;
-            text-align: right; z-index: 200;
+            background: rgba(0, 0, 0, 0.8); color: #00ff00; 
+            padding: 10px; border-radius: 4px;
+            text-align: right; z-index: 200; font-family: monospace;
+            border: 1px solid #00ff00;
         }
-        #settings-ui label { font-size: 12px; display: block; margin-bottom: 5px; }
-        #settings-ui input { width: 150px; }
+        #settings-ui label { font-size: 11px; display: block; margin-bottom: 5px; color: white; cursor: pointer; }
+        .divider { border: 0; border-top: 1px solid #555; margin: 8px 0; }
 
         #info {
             position: absolute; top: 10px; left: 10px;
-            color: rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 10;
+            color: rgba(255, 255, 255, 0.8); pointer-events: none; z-index: 10;
             text-align: left;
         }
         .ui-element { pointer-events: auto; }
@@ -67,14 +68,20 @@
     </style>
 </head>
 <body>
-    <div id="info">Real-Time Shadows + Blur</div>
+    <div id="info">Físicas: RAYCAST (Estable)<br>Flecha Verde = Suelo | Roja = Pared</div>
     
     <div id="settings-ui" class="ui-element">
-        <label>Rotación Fondo: <span id="bg-rot-val">58°</span></label>
-        <input type="range" id="bg-rot-slider" min="0" max="360" value="58">
+        <div id="debug-stats">Grounded: false</div>
+        <hr class="divider">
+        <label>
+            <input type="checkbox" id="wireframe-toggle"> Ver Malla Visual
+        </label>
+        <label>
+            <input type="checkbox" id="collider-debug" checked> Ver Rayos Debug
+        </label>
     </div>
 
-    <div id="pc-instructions">WASD: Mover | Arrastrar: Cámara Libre</div>
+    <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar</div>
 
     <div id="joystick-container" class="ui-element"><div id="joystick-thumb"></div></div>
 
@@ -100,15 +107,24 @@
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
         const clock = new THREE.Clock();
         
+        // --- FÍSICAS ---
         const maxMoveSpeed = 8.0; 
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
         let isMoving = false;
 
         let velocityY = 0;
-        const gravity = -25.0;
-        const jumpStrength = 10.0;
-        let isGrounded = true;
+        const gravity = -40.0; // Gravedad fuerte para sensación arcade
+        const jumpStrength = 14.0; 
+        let isGrounded = false;
+
+        // SISTEMA DE COLISIONES (RAYCAST)
+        const collisionMeshes = []; // Lista de mallas contra las que chocamos
+        const raycaster = new THREE.Raycaster();
+        const downVector = new THREE.Vector3(0, -1, 0);
+        
+        // Helpers visuales para depurar
+        let groundArrow, wallArrow;
 
         const projectiles = [];
         const projectileSpeed = 20.0;
@@ -125,16 +141,31 @@
         let isDraggingCamera = false;
         let previousMousePosition = { x: 0, y: 0 };
 
-        const bgSlider = document.getElementById('bg-rot-slider');
-        const bgVal = document.getElementById('bg-rot-val');
+        // UI
+        const wireframeToggle = document.getElementById('wireframe-toggle');
+        const colliderDebugToggle = document.getElementById('collider-debug');
+        const debugStats = document.getElementById('debug-stats');
         
-        bgSlider.addEventListener('input', (e) => {
-            if (bgMesh) {
-                const degrees = e.target.value;
-                bgVal.innerText = degrees + '°';
-                const radians = THREE.MathUtils.degToRad(degrees);
-                bgMesh.rotation.y = radians;
-            }
+        wireframeToggle.addEventListener('change', (e) => {
+            const isWireframe = e.target.checked;
+            scene.traverse((child) => {
+                if (child.isMesh && child.material && !child.userData.isCollider && child !== bgMesh) {
+                    child.material.wireframe = isWireframe;
+                }
+            });
+        });
+
+        colliderDebugToggle.addEventListener('change', (e) => {
+            const show = e.target.checked;
+            if(groundArrow) groundArrow.visible = show;
+            if(wallArrow) wallArrow.visible = show;
+            // Mostrar/Ocultar mallas de colisión invisibles
+            collisionMeshes.forEach(mesh => {
+                if(mesh.userData.isCollider) {
+                    mesh.material.visible = show; // Solo visible en modo debug
+                    mesh.material.wireframe = true;
+                }
+            });
         });
 
         document.addEventListener('pointerdown', (e) => {
@@ -220,9 +251,6 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        // --- CONFIGURACIÓN VISUAL ÓPTIMA ---
-        // Antialias nativo activado (bordes limpios)
-        // PixelRatio 1.5 (balance rendimiento/calidad móvil)
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
@@ -232,7 +260,6 @@
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         
         renderer.shadowMap.enabled = true;
-        // PCFSoftShadowMap permite el uso de 'radius' para difuminar (Blur)
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         document.body.appendChild(renderer.domElement);
 
@@ -241,30 +268,22 @@
         scene.environment = envTexture;
         scene.environmentIntensity = 0.5; 
 
+        // Debug Arrows
+        groundArrow = new THREE.ArrowHelper(downVector, new THREE.Vector3(), 1, 0x00ff00);
+        wallArrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(), 1, 0xff0000);
+        scene.add(groundArrow);
+        scene.add(wallArrow);
+
         // LUZ SOL
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
-        
-        // Mantenemos 1024 para no ahogar la GPU
         sunLight.shadow.mapSize.set(1024, 1024); 
-        
-        // --- BLUR ESTRATÉGICO ---
-        // Esto disimula la baja resolución y el acné
         sunLight.shadow.radius = 3; 
-        
-        // Frustum ajustado (20)
         const d = 20; 
-        sunLight.shadow.camera.left = -d;
-        sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d;
-        sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.camera.near = 0.5;
-        sunLight.shadow.camera.far = 150; 
-        
-        // Bias conservador (gracias al blur y la focalización)
-        sunLight.shadow.bias = -0.0005;  
-        sunLight.shadow.normalBias = 0.04; 
-        
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
+        sunLight.shadow.bias = -0.001;  
+        sunLight.shadow.normalBias = 0.05; 
         scene.add(sunLight); scene.add(sunLight.target); 
         
         const hemiLight = new THREE.HemisphereLight(FIXED_SETTINGS.color, 0x000000, FIXED_SETTINGS.amb);
@@ -275,10 +294,10 @@
         const thetaSun = THREE.MathUtils.degToRad(FIXED_SETTINGS.horiz);   
         sunOffset.set(sunDistance * Math.sin(phiSun) * Math.sin(thetaSun), sunDistance * Math.cos(phiSun), sunDistance * Math.sin(phiSun) * Math.cos(thetaSun));
 
-        const loader = new GLTFLoader();
+        const gltfLoader = new GLTFLoader();
         const textureLoader = new THREE.TextureLoader();
         
-        // FONDO (58 grados default)
+        // FONDO
         const bgTexture = textureLoader.load('./bg.webp');
         bgTexture.colorSpace = THREE.SRGBColorSpace; 
         const sphereGeo = new THREE.SphereGeometry(500, 32, 16); 
@@ -287,38 +306,91 @@
             map: bgTexture, side: THREE.DoubleSide, fog: false, depthWrite: false, toneMapped: false 
         });
         bgMesh = new THREE.Mesh(sphereGeo, sphereMat);
-        
         bgMesh.rotation.y = THREE.MathUtils.degToRad(58);
         scene.add(bgMesh);
 
+        // --- PLATAFORMAS FLOTANTES ---
+        function addPlatform(x, y, z) {
+            const geo = new THREE.BoxGeometry(2.5, 0.2, 2.5); 
+            const mat = new THREE.MeshStandardMaterial({ color: 0xffff00, roughness: 0.4 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.frustumCulled = false; // Fix parpadeo
+            scene.add(mesh);
+
+            // Añadir a colisionadores
+            collisionMeshes.push(mesh);
+        }
+
+        addPlatform(0, 2.0, -15);
+        addPlatform(-2, 3.5, -22);
+        addPlatform(2, 5.0, -30);
+
+
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; lightmapTexture.channel = 1; 
-        loader.load('./modulo_1.gltf', function (gltf) {
-            const originalModule = gltf.scene;
+        
+        // --- CARGAR MÓDULO + COLISIÓN EMBEBIDA ---
+        gltfLoader.load('./modulo_1.gltf', function (gltf) {
+            const masterModule = gltf.scene;
+            const totalBox = new THREE.Box3().setFromObject(masterModule);
             const size = new THREE.Vector3();
-            new THREE.Box3().setFromObject(originalModule).getSize(size);
-            originalModule.traverse((child) => { if (child.isMesh) { child.material.lightMap = lightmapTexture; child.material.lightMapIntensity = 1.0; child.material.aoMap = lightmapTexture; child.material.aoMapIntensity = 1.0; child.material.envMapIntensity = 0.1; child.material.side = THREE.DoubleSide; 
-                // ACTIVAMOS SOMBRAS DINÁMICAS (Necesarias en runners modulares)
-                child.castShadow = true; 
-                child.receiveShadow = true; 
-            } });
-            
+            totalBox.getSize(size);
+
             for (let i = 0; i < 6; i++) { 
-                let moduleInstance = (i === 0) ? originalModule : originalModule.clone(); 
-                moduleInstance.position.z = - (i * size.z); 
+                let moduleInstance = masterModule.clone(); 
+                let zPos = - (i * size.z);
+                moduleInstance.position.z = zPos;
                 scene.add(moduleInstance); 
+
+                // --- PROCESAR INSTANCIA ---
+                moduleInstance.traverse((child) => {
+                    const nameLower = child.name.toLowerCase();
+
+                    // 1. ¿ES MALLA DE COLISIÓN?
+                    if (nameLower.includes("colision") || nameLower.includes("collision")) {
+                        child.material = new THREE.MeshBasicMaterial({ 
+                            color: 0xff0000, 
+                            wireframe: true,
+                            transparent: true,
+                            opacity: 0.0, // Invisible por defecto
+                            side: THREE.DoubleSide // Asegurar que el rayo choque por ambos lados
+                        });
+                        child.userData.isCollider = true;
+                        child.visible = true; // Tiene que ser 'visible' para que el raycaster lo detecte, aunque el material sea transparente
+                        
+                        collisionMeshes.push(child);
+                    
+                    // 2. PARTE VISUAL
+                    } else if (child.isMesh) {
+                        child.material.lightMap = lightmapTexture; 
+                        child.material.lightMapIntensity = 1.0; 
+                        child.material.aoMap = lightmapTexture; 
+                        child.material.aoMapIntensity = 1.0; 
+                        child.material.envMapIntensity = 0.1; 
+                        child.material.side = THREE.DoubleSide; 
+                        child.castShadow = true; 
+                        child.receiveShadow = true; 
+                    }
+                });
             }
-            addDecoLights(originalModule, size.z);
+            addDecoLights(masterModule, size.z);
         });
 
-        loader.load('./GIRLrun.gltf', function (gltf) {
+        gltfLoader.load('./GIRLrun.gltf', function (gltf) {
             rawCharacterMesh = gltf.scene;
             rawCharacterMesh.scale.set(0.7, 0.7, 0.7);
             rawCharacterMesh.updateMatrixWorld(true); 
             playerContainer = new THREE.Group();
             scene.add(playerContainer);
+            // Iniciamos un poco elevados para no caer al vacío si la carga tarda
+            playerContainer.position.set(0, 5, 0); 
+            
             const box = new THREE.Box3().setFromObject(rawCharacterMesh);
             const center = box.getCenter(new THREE.Vector3());
+            // Ajuste visual del modelo dentro del contenedor
             rawCharacterMesh.position.set(-center.x, -box.min.y, -center.z);
             playerContainer.add(rawCharacterMesh);
             
@@ -326,9 +398,7 @@
                 if (child.isMesh) { 
                     child.castShadow = true; 
                     child.receiveShadow = true; 
-                    if(child.material) {
-                         child.material.roughness = 0.8; 
-                    }
+                    if(child.material) child.material.roughness = 0.8; 
                 }
             });
             
@@ -343,7 +413,10 @@
         function addDecoLights(module, lengthZ) { const positions = [ { x: -3.8, z: -lengthZ * 0.20 }, { x:  3.8, z: -lengthZ * 0.20 }, { x: -3.8, z: -lengthZ * 0.80 }, { x:  3.8, z: -lengthZ * 0.80 } ]; const bulbMat = new THREE.MeshBasicMaterial({ color: 0xccffff }); const bulbGeo = new THREE.SphereGeometry(0.1, 8, 8); positions.forEach(pos => { const bulb = new THREE.Mesh(bulbGeo, bulbMat); bulb.position.set(pos.x, 2.9, pos.z); module.add(bulb); }); }
 
         function jump() {
-            if (isGrounded) { velocityY = jumpStrength; isGrounded = false; }
+            if (isGrounded) { 
+                velocityY = jumpStrength; 
+                isGrounded = false; 
+            }
         }
 
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8);
@@ -363,15 +436,54 @@
             projectiles.push(proj);
         }
 
+        // --- SISTEMA FÍSICO RAYCAST ---
+        function getEnvironmentHeight(position) {
+            // Origen: Un poco arriba del jugador
+            const origin = position.clone();
+            origin.y += 1.0; 
+            
+            raycaster.set(origin, downVector);
+            raycaster.far = 10.0; // No buscar suelo infinito
+
+            // Debug visual
+            if (groundArrow) {
+                groundArrow.position.copy(origin);
+                groundArrow.setDirection(downVector);
+            }
+
+            const intersects = raycaster.intersectObjects(collisionMeshes, true);
+            if (intersects.length > 0) {
+                return intersects[0].point.y;
+            }
+            return -999; // Vacío
+        }
+
+        function checkWall(position, direction) {
+            // Rayo desde el pecho hacia adelante
+            const origin = position.clone();
+            origin.y += 0.8; 
+            
+            // Debug
+            if (wallArrow) {
+                wallArrow.position.copy(origin);
+                wallArrow.setDirection(direction);
+            }
+
+            raycaster.set(origin, direction);
+            raycaster.far = 0.6; // Distancia de choque (radio jugador)
+            
+            const intersects = raycaster.intersectObjects(collisionMeshes, true);
+            return intersects.length > 0;
+        }
+
         function animate() {
             requestAnimationFrame(animate);
             const delta = Math.min(clock.getDelta(), 0.1); 
             
-            if (bgMesh) {
-                bgMesh.position.copy(camera.position);
-            }
+            if (bgMesh) bgMesh.position.copy(camera.position);
 
             if (playerContainer) {
+                // 1. INPUT
                 let inputX = joystickVector.x;
                 let inputY = joystickVector.y;
                 if (keyStates.w) inputY -= 1;
@@ -391,8 +503,14 @@
                     currentSpeed = 0;
                 }
 
+                // 2. MOVIMIENTO HORIZONTAL
                 if (isMoving) {
-                    playerContainer.position.addScaledVector(moveDirection.normalize(), currentSpeed * delta);
+                    const worldDirection = moveDirection.clone();
+                    
+                    // Si NO hay pared enfrente, movemos
+                    if (!checkWall(playerContainer.position, worldDirection)) {
+                        playerContainer.position.addScaledVector(moveDirection, currentSpeed * delta);
+                    }
 
                     const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
                     const targetQuaternion = new THREE.Quaternion();
@@ -411,12 +529,38 @@
                     if (mixer) mixer.timeScale = 0;
                 }
 
+                // 3. FÍSICAS VERTICALES (Estilo Arcade)
                 velocityY += gravity * delta;
-                playerContainer.position.y += velocityY * delta;
-                if (playerContainer.position.y <= 0) {
-                    playerContainer.position.y = 0; velocityY = 0; isGrounded = true;
-                } else { isGrounded = false; if(mixer) mixer.timeScale = 0; }
+                
+                // Calculamos nueva Y propuesta por gravedad
+                let proposedY = playerContainer.position.y + velocityY * delta;
+                
+                // ¿Dónde está el suelo realmente?
+                const floorY = getEnvironmentHeight(playerContainer.position);
+                
+                // Lógica de Aterrizaje
+                // Si vamos a atravesar el suelo (proposedY < floorY) Y estamos cayendo
+                if (proposedY <= floorY && velocityY <= 0) {
+                    // Aterrizamos suavemente
+                    playerContainer.position.y = floorY;
+                    velocityY = 0;
+                    isGrounded = true;
+                } else if (proposedY <= 0) {
+                    // Suelo base de seguridad (nivel 0)
+                    playerContainer.position.y = 0;
+                    velocityY = 0;
+                    isGrounded = true;
+                } else {
+                    // En el aire
+                    playerContainer.position.y = proposedY;
+                    isGrounded = false;
+                    if(mixer) mixer.timeScale = 0;
+                }
+                
+                // Debug Info
+                debugStats.innerText = `Grounded: ${isGrounded} | Y: ${playerContainer.position.y.toFixed(2)}`;
 
+                // CÁMARA
                 const camX = camRadius * Math.sin(camPhi) * Math.sin(camTheta);
                 const camY = camRadius * Math.cos(camPhi);
                 const camZ = camRadius * Math.sin(camPhi) * Math.cos(camTheta);
