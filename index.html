@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Performance Tools</title>
+    <title>Juego 3D - Performance Master</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -12,11 +12,11 @@
         
         #settings-ui {
             position: absolute; top: 10px; right: 10px;
-            background: rgba(0, 0, 0, 0.8); color: #00ff00; 
+            background: rgba(0, 0, 0, 0.85); color: #00ff00; 
             padding: 10px; border-radius: 4px;
             text-align: right; z-index: 200; font-family: monospace;
             border: 1px solid #00ff00;
-            min-width: 180px;
+            min-width: 200px;
         }
         #settings-ui label { font-size: 12px; display: block; margin-bottom: 8px; color: white; cursor: pointer; }
         #settings-ui input[type=checkbox] { margin-right: 8px; }
@@ -75,11 +75,11 @@
     <div id="settings-ui" class="ui-element">
         <div id="fps-display">FPS: 0</div>
         
-        <label>
-            <input type="checkbox" id="shadows-toggle" checked> Sombras Sol
+        <label title="Si se desactiva, solo el personaje proyecta sombra. Ahorra MUCHO rendimiento.">
+            <input type="checkbox" id="env-shadows-toggle" checked> Sombra Escenario
         </label>
-        <label>
-            <input type="checkbox" id="hq-toggle" checked> Alta Calidad (AA)
+        <label title="Baja la resolución de la sombra a 512px.">
+            <input type="checkbox" id="low-res-shadows"> Sombras Low-Res
         </label>
         
         <hr class="divider">
@@ -87,9 +87,6 @@
         <div class="stat-row">Triángulos: <span id="tri-count">0</span></div>
         
         <hr class="divider">
-        <label>
-            <input type="checkbox" id="wireframe-toggle"> Ver Malla Visual
-        </label>
         <label>
             <input type="checkbox" id="collider-debug"> Ver Rayos Debug
         </label>
@@ -119,11 +116,15 @@
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
         const clock = new THREE.Clock();
         
-        // Variables FPS
+        // FPS
         let lastTime = performance.now();
         let frames = 0;
         const fpsDisplay = document.getElementById('fps-display');
         const physStepsDisplay = document.getElementById('phys-steps');
+        const uiTriCount = document.getElementById('tri-count');
+
+        // GESTIÓN DE OBJETOS VISUALES (Para optimización)
+        const environmentMeshes = []; // Guardamos referencias para apagar sus sombras
 
         // --- FÍSICAS ---
         const maxMoveSpeed = 8.0; 
@@ -136,7 +137,7 @@
         const jumpStrength = 14.0; 
         let isGrounded = false;
 
-        // SISTEMA DE COLISIONES
+        // SISTEMA DE COLISIONES (RAYCAST)
         const collisionMeshes = []; 
         const raycaster = new THREE.Raycaster();
         const downVector = new THREE.Vector3(0, -1, 0);
@@ -157,36 +158,31 @@
         let isDraggingCamera = false;
         let previousMousePosition = { x: 0, y: 0 };
 
-        // --- UI Y CONTROLES DE RENDIMIENTO ---
-        const wireframeToggle = document.getElementById('wireframe-toggle');
+        // --- CONTROLES UI ---
+        const envShadowsToggle = document.getElementById('env-shadows-toggle');
+        const lowResShadowsToggle = document.getElementById('low-res-shadows');
         const colliderDebugToggle = document.getElementById('collider-debug');
-        const shadowsToggle = document.getElementById('shadows-toggle');
-        const hqToggle = document.getElementById('hq-toggle');
-        const uiTriCount = document.getElementById('tri-count');
 
-        // 1. Toggle Sombras
-        shadowsToggle.addEventListener('change', (e) => {
-            if (sunLight) {
-                sunLight.castShadow = e.target.checked;
-            }
-        });
-
-        // 2. Toggle Calidad (Simula AA bajando resolución)
-        hqToggle.addEventListener('change', (e) => {
-            const isHighQuality = e.target.checked;
-            // Si Alta Calidad: usa pixelRatio nativo (o max 1.5)
-            // Si Baja Calidad: usa pixelRatio 0.75 (borroso pero rápido)
-            const newPixelRatio = isHighQuality ? Math.min(window.devicePixelRatio, 1.5) : 0.75;
-            renderer.setPixelRatio(newPixelRatio);
-        });
-        
-        wireframeToggle.addEventListener('change', (e) => {
-            const isWireframe = e.target.checked;
-            scene.traverse((child) => {
-                if (child.isMesh && child.material && !child.userData.isCollider && child !== bgMesh) {
-                    child.material.wireframe = isWireframe;
-                }
+        // OPTIMIZACIÓN 1: Sombra Escenario ON/OFF
+        envShadowsToggle.addEventListener('change', (e) => {
+            const cast = e.target.checked;
+            // Recorremos todos los objetos del escenario y cambiamos su propiedad
+            environmentMeshes.forEach(mesh => {
+                mesh.castShadow = cast;
             });
+        });
+
+        // OPTIMIZACIÓN 2: Sombras Low Res (Requiere reconstruir mapa a veces, pero probamos resize)
+        lowResShadowsToggle.addEventListener('change', (e) => {
+            const isLowRes = e.target.checked;
+            const size = isLowRes ? 512 : 1024;
+            
+            if (sunLight && sunLight.shadow && sunLight.shadow.map) {
+                sunLight.shadow.mapSize.set(size, size);
+                // Forzamos actualización liberando el mapa anterior
+                sunLight.shadow.map.dispose();
+                sunLight.shadow.map = null;
+            }
         });
 
         colliderDebugToggle.addEventListener('change', (e) => {
@@ -286,7 +282,9 @@
         
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
+        
+        // --- OPTIMIZACIÓN PIXEL RATIO 1.1 ---
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.1)); 
         
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
         renderer.toneMappingExposure = 1.0;
@@ -312,11 +310,19 @@
         // LUZ SOL
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
+        
+        // Default 1024
         sunLight.shadow.mapSize.set(1024, 1024); 
         sunLight.shadow.radius = 3; 
+        
         const d = 20; 
-        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 150; 
+        
         sunLight.shadow.bias = -0.001;  
         sunLight.shadow.normalBias = 0.05; 
         scene.add(sunLight); scene.add(sunLight.target); 
@@ -355,6 +361,7 @@
             mesh.frustumCulled = false; 
             scene.add(mesh);
             collisionMeshes.push(mesh);
+            environmentMeshes.push(mesh); // Añadir a la lista de optimización
         }
 
         addPlatform(0, 2.0, -15);
@@ -393,8 +400,12 @@
                         child.material.aoMapIntensity = 1.0; 
                         child.material.envMapIntensity = 0.1; 
                         child.material.side = THREE.DoubleSide; 
+                        
                         child.castShadow = true; 
                         child.receiveShadow = true; 
+                        
+                        // Guardar referencia para poder apagar su sombra luego
+                        environmentMeshes.push(child);
                     }
                 });
             }
@@ -475,11 +486,9 @@
             return intersects.length > 0;
         }
 
-        // --- BUCLE DE JUEGO OPTIMIZADO (SUB-STEPPING) ---
         function updatePhysics(dt) {
             if (!playerContainer) return;
 
-            // 1. INPUT
             let inputX = joystickVector.x;
             let inputY = joystickVector.y;
             if (keyStates.w) inputY -= 1;
@@ -499,7 +508,6 @@
                 currentSpeed = 0;
             }
 
-            // 2. MOVIMIENTO HORIZONTAL
             if (isMoving) {
                 const worldDirection = moveDirection.clone();
                 if (!checkWall(playerContainer.position, worldDirection)) {
@@ -511,7 +519,6 @@
                 playerContainer.quaternion.slerp(targetQuaternion, 10 * dt);
             }
 
-            // 3. FÍSICAS VERTICALES
             velocityY += gravity * dt;
             let proposedY = playerContainer.position.y + velocityY * dt;
             const floorY = getEnvironmentHeight(playerContainer.position);
@@ -533,43 +540,34 @@
         function animate() {
             requestAnimationFrame(animate);
             
-            // FPS Counter
             const time = performance.now();
             frames++;
             if (time >= lastTime + 1000) {
                 fpsDisplay.innerText = "FPS: " + frames;
                 frames = 0;
                 lastTime = time;
-                
-                // Actualizar contador de triángulos (pesado, solo 1 vez por seg)
                 if(renderer.info.render) uiTriCount.innerText = renderer.info.render.triangles.toLocaleString();
             }
 
             let delta = Math.min(clock.getDelta(), 0.1); 
             
-            // --- SUB-STEPPING ---
-            // Si el FPS es bajo, dividimos el frame en pasos más pequeños para no atravesar paredes
-            const timeStep = 1/60; // Física ideal a 60hz
+            const timeStep = 1/60; 
             let steps = Math.ceil(delta / timeStep);
-            // Limitamos pasos para no congelar si va muy lento
             if(steps > 4) steps = 4; 
             
-            physStepsDisplay.innerText = steps; // Debug steps
+            physStepsDisplay.innerText = steps; 
 
             for(let i=0; i<steps; i++) {
                 updatePhysics(delta / steps);
             }
 
-            // Animación visual (fuera de la física)
             if (playerContainer) {
                 if (mixer) {
-                    // Animación correr/idle
                     if (isGrounded && isMoving) mixer.timeScale = currentSpeed / maxMoveSpeed;
                     else mixer.timeScale = 0;
                     mixer.update(delta);
                 }
 
-                // Cámara y Luz siguen al jugador interpolado
                 const camX = camRadius * Math.sin(camPhi) * Math.sin(camTheta);
                 const camY = camRadius * Math.cos(camPhi);
                 const camZ = camRadius * Math.sin(camPhi) * Math.cos(camTheta);
