@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Gameplay Fix</title>
+    <title>Juego 3D - Analog High Jump</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -119,7 +119,7 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
-        let blobShadow; // Sombra falsa para referencia visual
+        let blobShadow;
         const clock = new THREE.Clock();
         
         // FPS Variables
@@ -132,16 +132,16 @@
         // Optimización
         const environmentMeshes = [];
 
-        // --- FÍSICAS AJUSTADAS ---
-        const maxMoveSpeed = 8.0; 
+        // --- FÍSICAS "ATLETA" (Analógicas pero potentes) ---
+        const maxMoveSpeed = 11.0; // Antes 8.0 -> Más velocidad para compensar joystick suave
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
         let isMoving = false;
 
         let velocityY = 0;
-        // Gravedad y Salto suavizados para más control
-        const gravity = -35.0; 
-        const jumpStrength = 13.0; 
+        // Salto más potente y gravedad más fuerte (sensación "snappy")
+        const gravity = -50.0; // Antes -30/40
+        const jumpStrength = 18.0; // Antes 14
         let isGrounded = false;
 
         // SISTEMA DE COLISIONES (RAYCAST)
@@ -171,14 +171,12 @@
         const shadowsHqToggle = document.getElementById('shadows-hq-toggle');
         const colliderDebugToggle = document.getElementById('collider-debug');
 
-        // 1. Resolución
         resToggle.addEventListener('change', (e) => {
             const isHD = e.target.checked;
             const ratio = isHD ? Math.min(window.devicePixelRatio, 1.1) : 0.7;
             renderer.setPixelRatio(ratio);
         });
 
-        // 2. Sombras ON/OFF
         shadowsToggle.addEventListener('change', (e) => {
             const isOn = e.target.checked;
             sunLight.castShadow = isOn;
@@ -186,7 +184,6 @@
             if (playerContainer) playerContainer.traverse(c => { if(c.isMesh) c.castShadow = isOn; });
         });
 
-        // 3. Sombras Calidad
         shadowsHqToggle.addEventListener('change', (e) => {
             const isHQ = e.target.checked;
             const size = isHQ ? 1024 : 512;
@@ -251,6 +248,8 @@
                 y = (y / distance) * maxRadius;
             }
             joystickThumb.style.transform = `translate(${x}px, ${y}px)`;
+            
+            // ANALÓGICO: Mantenemos la intensidad del empuje (0.0 a 1.0)
             joystickVector.x = x / maxRadius;
             joystickVector.y = y / maxRadius; 
         };
@@ -294,7 +293,7 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.1)); 
         
@@ -319,8 +318,7 @@
         scene.add(groundArrow);
         scene.add(wallArrow);
 
-        // CREAR SOMBRA FALSA (BLOB SHADOW)
-        // Crea una textura redonda suave programáticamente
+        // BLOB SHADOW
         function createShadowTexture() {
             const canvas = document.createElement('canvas');
             canvas.width = 64; canvas.height = 64;
@@ -336,24 +334,25 @@
         const shadowMat = new THREE.MeshBasicMaterial({ 
             map: createShadowTexture(), 
             transparent: true, 
-            depthWrite: false, // No escribe en el buffer de profundidad para evitar glitches con el suelo
-            polygonOffset: true, polygonOffsetFactor: -1 // Ayuda a que se dibuje encima del suelo
+            depthWrite: false, 
+            polygonOffset: true, polygonOffsetFactor: -1 
         });
         const shadowGeo = new THREE.PlaneGeometry(0.8, 0.8);
         blobShadow = new THREE.Mesh(shadowGeo, shadowMat);
-        blobShadow.rotation.x = -Math.PI / 2; // Horizontal
+        blobShadow.rotation.x = -Math.PI / 2; 
         blobShadow.visible = false;
         scene.add(blobShadow);
-
 
         // LUZ SOL
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(1024, 1024); 
         sunLight.shadow.radius = 3; 
+        
         const d = 20; 
         sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
+        
         sunLight.shadow.bias = -0.001;  
         sunLight.shadow.normalBias = 0.05; 
         scene.add(sunLight); scene.add(sunLight.target); 
@@ -494,15 +493,12 @@
             projectiles.push(proj);
         }
 
-        // --- SISTEMA FÍSICO RAYCAST MEJORADO (BIG FEET) ---
-        // Lanza múltiples rayos para simular que el personaje tiene pies y no un alfiler
+        // --- SISTEMA FÍSICO RAYCAST MULTIPLE (BIG FEET) ---
         function getEnvironmentHeight(position) {
             const origin = position.clone();
             origin.y += 1.0; 
             
-            // Radio de los "pies" del personaje
             const footRadius = 0.35; 
-            // Puntos a comprobar: Centro, y 4 puntos alrededor
             const offsets = [
                 new THREE.Vector3(0, 0, 0),
                 new THREE.Vector3(footRadius, 0, 0),
@@ -529,7 +525,6 @@
                 }
             }
 
-            // Debug del rayo central
             if (groundArrow) { groundArrow.position.copy(origin); groundArrow.setDirection(downVector); }
             
             return hitFound ? maxHeight : -999;
@@ -560,8 +555,14 @@
             
             if (length > 0.1) { 
                 isMoving = true;
-                if (length > 1) { moveDirection.normalize(); currentSpeed = maxMoveSpeed; } 
-                else { currentSpeed = maxMoveSpeed * length; }
+                // --- VELOCIDAD VARIABLE (ANALOGICA) ---
+                if (length > 1) { 
+                    moveDirection.normalize(); 
+                    currentSpeed = maxMoveSpeed; 
+                } else { 
+                    // Sensible a la intensidad del dedo
+                    currentSpeed = maxMoveSpeed * length; 
+                }
             } else {
                 isMoving = false;
                 currentSpeed = 0;
@@ -582,11 +583,10 @@
             let proposedY = playerContainer.position.y + velocityY * dt;
             const floorY = getEnvironmentHeight(playerContainer.position);
             
-            // Actualizar posición de la sombra falsa (siempre pegada al suelo real)
+            // Actualizar Blob Shadow
             if (blobShadow) {
                 if (floorY > -500) {
                     blobShadow.visible = true;
-                    // Sigue al jugador en X/Z, pero en Y se queda en el suelo (+ un pelín para no Z-fight)
                     blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z);
                 } else {
                     blobShadow.visible = false;
