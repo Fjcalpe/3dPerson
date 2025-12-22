@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - AA + Res 1.2</title>
+    <title>Juego 3D - Landing Control</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -141,7 +141,12 @@
         let velocityY = 0;
         const gravity = -50.0; 
         const jumpStrength = 18.0; 
+        
+        // --- LOGICA DE ATERRIZAJE ---
         let isGrounded = false;
+        let wasGrounded = false; // Para detectar el frame exacto del impacto
+        let landingCooldown = 0.0; // Temporizador para congelar el movimiento
+        const LANDING_PAUSE_DURATION = 0.2; // 200ms de pausa al caer
 
         // SISTEMA DE COLISIONES (RAYCAST)
         const collisionMeshes = []; 
@@ -172,7 +177,6 @@
 
         resToggle.addEventListener('change', (e) => {
             const isHD = e.target.checked;
-            // CAMBIO: 1.2 si HD, 0.7 si Low
             const ratio = isHD ? Math.min(window.devicePixelRatio, 1.2) : 0.7;
             renderer.setPixelRatio(ratio);
         });
@@ -543,6 +547,19 @@
         function updatePhysics(dt) {
             if (!playerContainer) return;
 
+            // TRACKING DEL ESTADO ANTERIOR (Para detectar el aterrizaje)
+            // No necesitamos guardar 'wasGrounded' aquí porque ya lo tenemos fuera si quisieramos
+            // Pero la lógica de freeze se aplica al mover.
+
+            // --- GESTIÓN DE COOLDOWN DE ATERRIZAJE ---
+            if (landingCooldown > 0) {
+                landingCooldown -= dt;
+                // Si estamos en cooldown, forzamos velocidad 0 y salimos
+                currentSpeed = 0;
+                // Dejamos que la gravedad siga actuando (para que termine de bajar si hace falta)
+                // pero no procesamos input horizontal.
+            }
+
             let inputX = joystickVector.x;
             let inputY = joystickVector.y;
             if (keyStates.w) inputY -= 1;
@@ -553,7 +570,8 @@
             moveDirection.set(inputX, 0, inputY);
             const length = moveDirection.length();
             
-            if (length > 0.1) { 
+            // Solo procesamos movimiento si NO estamos en cooldown
+            if (length > 0.1 && landingCooldown <= 0) { 
                 isMoving = true;
                 if (length > 1) { 
                     moveDirection.normalize(); 
@@ -563,7 +581,7 @@
                 }
             } else {
                 isMoving = false;
-                currentSpeed = 0;
+                if (landingCooldown <= 0) currentSpeed = 0; // Solo paramos si no es por cooldown (que ya lo para)
             }
 
             if (isMoving) {
@@ -581,6 +599,7 @@
             let proposedY = playerContainer.position.y + velocityY * dt;
             const floorY = getEnvironmentHeight(playerContainer.position);
             
+            // Blob Shadow
             if (blobShadow) {
                 if (floorY > -500) {
                     blobShadow.visible = true;
@@ -591,10 +610,17 @@
             }
 
             if (proposedY <= floorY && velocityY <= 0) {
+                // DETECCIÓN DE ATERRIZAJE (Just Landed)
+                if (!isGrounded) {
+                    // ¡Acabamos de tocar suelo!
+                    landingCooldown = LANDING_PAUSE_DURATION; // Activamos el freno
+                }
+
                 playerContainer.position.y = floorY;
                 velocityY = 0;
                 isGrounded = true;
             } else if (proposedY <= 0) {
+                if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; // Aterrizaje en suelo base
                 playerContainer.position.y = 0;
                 velocityY = 0;
                 isGrounded = true;
