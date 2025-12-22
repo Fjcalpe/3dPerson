@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Landing Control</title>
+    <title>Juego 3D - Open World TPS</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -70,31 +70,21 @@
     </style>
 </head>
 <body>
-    <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar</div>
+    <div id="pc-instructions">WASD: Mover (Relativo a Cámara) | Drag: Girar Cámara</div>
     
     <div id="settings-ui" class="ui-element">
         <div id="fps-display">FPS: 0</div>
         
-        <label title="Resolución alta (1.2x) o baja (0.7x). Baja para ganar FPS.">
-            Resolución HD <input type="checkbox" id="res-toggle" checked>
-        </label>
-        
-        <label title="Activa o desactiva las sombras del sol.">
-            Sombras <input type="checkbox" id="shadows-toggle" checked>
-        </label>
-        
-        <label title="Calidad del mapa de sombras (1024px vs 512px).">
-            Sombras HQ <input type="checkbox" id="shadows-hq-toggle" checked>
-        </label>
+        <label>Resolución HD <input type="checkbox" id="res-toggle" checked></label>
+        <label>Sombras <input type="checkbox" id="shadows-toggle" checked></label>
+        <label>Sombras HQ <input type="checkbox" id="shadows-hq-toggle" checked></label>
 
         <hr class="divider">
         <div class="stat-row">Physics Steps: <span id="phys-steps">1</span></div>
         <div class="stat-row">Triángulos: <span id="tri-count">0</span></div>
         
         <hr class="divider">
-        <label>
-            Ver Rayos Debug <input type="checkbox" id="collider-debug">
-        </label>
+        <label>Ver Rayos Debug <input type="checkbox" id="collider-debug"></label>
     </div>
 
     <div id="joystick-container" class="ui-element"><div id="joystick-thumb"></div></div>
@@ -132,23 +122,21 @@
         // Optimización
         const environmentMeshes = [];
 
-        // --- FÍSICAS "ATLETA" (Analogicas) ---
+        // --- FÍSICAS & CONTROL ---
         const maxMoveSpeed = 11.0; 
         let currentSpeed = 0;
-        let moveDirection = new THREE.Vector3();
+        let moveDirection = new THREE.Vector3(); // Dirección final calculada
+        let inputDirection = new THREE.Vector3(); // Dirección pura del joystick
         let isMoving = false;
 
         let velocityY = 0;
         const gravity = -50.0; 
         const jumpStrength = 18.0; 
-        
-        // --- LOGICA DE ATERRIZAJE ---
         let isGrounded = false;
-        let wasGrounded = false; // Para detectar el frame exacto del impacto
-        let landingCooldown = 0.0; // Temporizador para congelar el movimiento
-        const LANDING_PAUSE_DURATION = 0.2; // 200ms de pausa al caer
+        let landingCooldown = 0.0; 
+        const LANDING_PAUSE_DURATION = 0.2;
 
-        // SISTEMA DE COLISIONES (RAYCAST)
+        // SISTEMA DE COLISIONES
         const collisionMeshes = []; 
         const raycaster = new THREE.Raycaster();
         const downVector = new THREE.Vector3(0, -1, 0);
@@ -161,8 +149,10 @@
         const FIXED_SETTINGS = { vert: 35, horiz: 215, intensity: 3.0, amb: 0.4, color: 0xffeeb1 };
         const keyStates = { w: false, a: false, s: false, d: false };
 
-        // CÁMARA
-        const defaultCamData = { radius: 3.2, theta: 0.00, phi: 0.60 };
+        // CÁMARA ORBITAL
+        // Theta: Ángulo horizontal (alrededor del Y)
+        // Phi: Ángulo vertical (arriba/abajo)
+        const defaultCamData = { radius: 4.5, theta: Math.PI, phi: 0.45 }; // Más lejos para ver más mapa
         let camRadius = defaultCamData.radius;
         let camTheta = defaultCamData.theta;
         let camPhi = defaultCamData.phi;
@@ -221,9 +211,14 @@
             if (!isDraggingCamera) return;
             const deltaX = e.clientX - previousMousePosition.x;
             const deltaY = e.clientY - previousMousePosition.y;
-            camTheta -= deltaX * 0.005; 
-            camPhi -= deltaY * 0.005;
+            
+            // Sensibilidad de la cámara
+            camTheta -= deltaX * 0.008; 
+            camPhi -= deltaY * 0.008;
+            
+            // Límites verticales para no dar la vuelta completa
             camPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camPhi));
+            
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
         document.addEventListener('pointerup', () => isDraggingCamera = false);
@@ -296,7 +291,6 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        // --- CAMBIOS SOLICITADOS: AA True, Ratio 1.2 ---
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2)); 
@@ -405,44 +399,51 @@
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; lightmapTexture.channel = 1; 
         
-        // --- CARGAR MÓDULO ---
+        // --- CARGAR MÓDULO (GENERACIÓN EN PARRILLA 3x3) ---
         gltfLoader.load('./modulo_1.gltf', function (gltf) {
             const masterModule = gltf.scene;
             const totalBox = new THREE.Box3().setFromObject(masterModule);
             const size = new THREE.Vector3();
             totalBox.getSize(size);
 
-            for (let i = 0; i < 6; i++) { 
-                let moduleInstance = masterModule.clone(); 
-                let zPos = - (i * size.z);
-                moduleInstance.position.z = zPos;
-                scene.add(moduleInstance); 
+            // Generar una parrilla de 3x3 para tener "mundo abierto"
+            for (let x = -1; x <= 1; x++) {
+                for (let z = -1; z <= 1; z++) {
+                    
+                    let moduleInstance = masterModule.clone(); 
+                    
+                    // Posicionamiento en rejilla
+                    moduleInstance.position.x = x * (size.x + 2); // Un poco de espacio extra
+                    moduleInstance.position.z = z * size.z;
+                    
+                    scene.add(moduleInstance); 
 
-                moduleInstance.traverse((child) => {
-                    const nameLower = child.name.toLowerCase();
-                    if (nameLower.includes("colision") || nameLower.includes("collision")) {
-                        child.material = new THREE.MeshBasicMaterial({ 
-                            color: 0xff0000, wireframe: true, transparent: true, opacity: 0.0, side: THREE.DoubleSide
-                        });
-                        child.userData.isCollider = true;
-                        child.visible = true; 
-                        collisionMeshes.push(child);
-                    } else if (child.isMesh) {
-                        child.material.lightMap = lightmapTexture; 
-                        child.material.lightMapIntensity = 1.0; 
-                        child.material.aoMap = lightmapTexture; 
-                        child.material.aoMapIntensity = 1.0; 
-                        child.material.envMapIntensity = 0.1; 
-                        child.material.side = THREE.DoubleSide; 
-                        
-                        child.castShadow = true; 
-                        child.receiveShadow = true; 
-                        
-                        environmentMeshes.push(child);
-                    }
-                });
+                    // Configurar mallas de la instancia
+                    moduleInstance.traverse((child) => {
+                        const nameLower = child.name.toLowerCase();
+                        if (nameLower.includes("colision") || nameLower.includes("collision")) {
+                            child.material = new THREE.MeshBasicMaterial({ 
+                                color: 0xff0000, wireframe: true, transparent: true, opacity: 0.0, side: THREE.DoubleSide
+                            });
+                            child.userData.isCollider = true;
+                            child.visible = true; 
+                            collisionMeshes.push(child);
+                        } else if (child.isMesh) {
+                            child.material.lightMap = lightmapTexture; 
+                            child.material.lightMapIntensity = 1.0; 
+                            child.material.aoMap = lightmapTexture; 
+                            child.material.aoMapIntensity = 1.0; 
+                            child.material.envMapIntensity = 0.1; 
+                            child.material.side = THREE.DoubleSide; 
+                            child.castShadow = true; 
+                            child.receiveShadow = true; 
+                            environmentMeshes.push(child);
+                        }
+                    });
+                    
+                    addDecoLights(moduleInstance, size.z);
+                }
             }
-            addDecoLights(masterModule, size.z);
         });
 
         gltfLoader.load('./GIRLrun.gltf', function (gltf) {
@@ -497,19 +498,13 @@
             projectiles.push(proj);
         }
 
-        // --- SISTEMA FÍSICO RAYCAST MULTIPLE (BIG FEET) ---
+        // --- SISTEMA FÍSICO RAYCAST MULTIPLE ---
         function getEnvironmentHeight(position) {
             const origin = position.clone();
             origin.y += 1.0; 
             
             const footRadius = 0.35; 
-            const offsets = [
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(footRadius, 0, 0),
-                new THREE.Vector3(-footRadius, 0, 0),
-                new THREE.Vector3(0, 0, footRadius),
-                new THREE.Vector3(0, 0, -footRadius)
-            ];
+            const offsets = [ new THREE.Vector3(0,0,0), new THREE.Vector3(footRadius,0,0), new THREE.Vector3(-footRadius,0,0), new THREE.Vector3(0,0,footRadius), new THREE.Vector3(0,0,-footRadius) ];
 
             let maxHeight = -999;
             let hitFound = false;
@@ -518,19 +513,13 @@
                 const rayOrigin = origin.clone().add(offsets[i]);
                 raycaster.set(rayOrigin, downVector);
                 raycaster.far = 10.0; 
-                
                 const intersects = raycaster.intersectObjects(collisionMeshes, true);
                 if (intersects.length > 0) {
                     const hitY = intersects[0].point.y;
-                    if (hitY > maxHeight) {
-                        maxHeight = hitY;
-                        hitFound = true;
-                    }
+                    if (hitY > maxHeight) { maxHeight = hitY; hitFound = true; }
                 }
             }
-
             if (groundArrow) { groundArrow.position.copy(origin); groundArrow.setDirection(downVector); }
-            
             return hitFound ? maxHeight : -999;
         }
 
@@ -547,19 +536,13 @@
         function updatePhysics(dt) {
             if (!playerContainer) return;
 
-            // TRACKING DEL ESTADO ANTERIOR (Para detectar el aterrizaje)
-            // No necesitamos guardar 'wasGrounded' aquí porque ya lo tenemos fuera si quisieramos
-            // Pero la lógica de freeze se aplica al mover.
-
-            // --- GESTIÓN DE COOLDOWN DE ATERRIZAJE ---
+            // Cooldown de aterrizaje
             if (landingCooldown > 0) {
                 landingCooldown -= dt;
-                // Si estamos en cooldown, forzamos velocidad 0 y salimos
                 currentSpeed = 0;
-                // Dejamos que la gravedad siga actuando (para que termine de bajar si hace falta)
-                // pero no procesamos input horizontal.
             }
 
+            // INPUTS
             let inputX = joystickVector.x;
             let inputY = joystickVector.y;
             if (keyStates.w) inputY -= 1;
@@ -567,39 +550,68 @@
             if (keyStates.a) inputX -= 1;
             if (keyStates.d) inputX += 1;
 
-            moveDirection.set(inputX, 0, inputY);
-            const length = moveDirection.length();
+            inputDirection.set(inputX, 0, inputY);
+            const length = inputDirection.length();
             
-            // Solo procesamos movimiento si NO estamos en cooldown
             if (length > 0.1 && landingCooldown <= 0) { 
                 isMoving = true;
+                // Velocidad máxima con control analógico
                 if (length > 1) { 
-                    moveDirection.normalize(); 
+                    inputDirection.normalize(); 
                     currentSpeed = maxMoveSpeed; 
                 } else { 
                     currentSpeed = maxMoveSpeed * length; 
                 }
             } else {
                 isMoving = false;
-                if (landingCooldown <= 0) currentSpeed = 0; // Solo paramos si no es por cooldown (que ya lo para)
+                if (landingCooldown <= 0) currentSpeed = 0;
             }
 
+            // MOVIMIENTO RELATIVO A LA CÁMARA (TPS)
             if (isMoving) {
-                const worldDirection = moveDirection.clone();
-                if (!checkWall(playerContainer.position, worldDirection)) {
+                // 1. Obtener dirección de la cámara (sin Y)
+                const camForward = new THREE.Vector3();
+                camera.getWorldDirection(camForward);
+                camForward.y = 0;
+                camForward.normalize();
+
+                // 2. Obtener dirección derecha de la cámara
+                const camRight = new THREE.Vector3();
+                camRight.crossVectors(new THREE.Vector3(0, 1, 0), camForward).normalize(); // Ojo al orden
+
+                // 3. Combinar inputs: 
+                // Joystick Y (negativo es adelante en pantalla) se alinea con camForward
+                // Joystick X se alinea con camRight
+                
+                // NOTA: inputY viene del joystick: Arriba es Negativo en HTML/Canvas usualmente, 
+                // pero aquí 'handleJoystick' da Y negativo hacia arriba. 
+                // En 3D: Arriba = Avanzar. 
+                
+                moveDirection.set(0,0,0);
+                // Si inputY es negativo (joystick arriba), queremos ir hacia camForward
+                moveDirection.addScaledVector(camForward, -inputDirection.z); // Z es el Y del joystick mapeado
+                // Si inputX es positivo (derecha), vamos a camRight
+                moveDirection.addScaledVector(camRight, -inputDirection.x); // Invertimos X porque cross product order
+
+                moveDirection.normalize();
+
+                // Chequeo de paredes
+                if (!checkWall(playerContainer.position, moveDirection)) {
                     playerContainer.position.addScaledVector(moveDirection, currentSpeed * dt);
                 }
+
+                // Rotar personaje hacia donde se mueve
                 const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
                 const targetQuaternion = new THREE.Quaternion();
                 targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
                 playerContainer.quaternion.slerp(targetQuaternion, 10 * dt);
             }
 
+            // VERTICAL
             velocityY += gravity * dt;
             let proposedY = playerContainer.position.y + velocityY * dt;
             const floorY = getEnvironmentHeight(playerContainer.position);
             
-            // Blob Shadow
             if (blobShadow) {
                 if (floorY > -500) {
                     blobShadow.visible = true;
@@ -610,17 +622,12 @@
             }
 
             if (proposedY <= floorY && velocityY <= 0) {
-                // DETECCIÓN DE ATERRIZAJE (Just Landed)
-                if (!isGrounded) {
-                    // ¡Acabamos de tocar suelo!
-                    landingCooldown = LANDING_PAUSE_DURATION; // Activamos el freno
-                }
-
+                if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; 
                 playerContainer.position.y = floorY;
                 velocityY = 0;
                 isGrounded = true;
             } else if (proposedY <= 0) {
-                if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; // Aterrizaje en suelo base
+                if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION;
                 playerContainer.position.y = 0;
                 velocityY = 0;
                 isGrounded = true;
@@ -661,11 +668,19 @@
                     mixer.update(delta);
                 }
 
+                // CÁMARA ORBITAL ACTUALIZADA
+                // La cámara ahora "persigue" al jugador según el ángulo Theta/Phi
                 const camX = camRadius * Math.sin(camPhi) * Math.sin(camTheta);
                 const camY = camRadius * Math.cos(camPhi);
                 const camZ = camRadius * Math.sin(camPhi) * Math.cos(camTheta);
+                
+                // Posición deseada de la cámara relativa al jugador
                 const targetCamPos = playerContainer.position.clone().add(new THREE.Vector3(camX, camY, camZ));
-                camera.position.copy(targetCamPos);
+                
+                // Suavizado de cámara (Lerp) para que no sea rígida
+                camera.position.lerp(targetCamPos, 0.1); // 0.1 = factor de suavizado
+                
+                // Mirar siempre un poco arriba del jugador
                 camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
 
                 sunLight.target.position.set(0, 0, playerContainer.position.z);
