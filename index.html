@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Soft Shadows Fix</title>
+    <title>Juego 3D - Gold Master</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -67,7 +67,7 @@
     </style>
 </head>
 <body>
-    <div id="info">Sombras Suaves (Blur)<br>Map: 1024 | Radius: 4</div>
+    <div id="info">Real-Time Shadows + Blur</div>
     
     <div id="settings-ui" class="ui-element">
         <label>Rotación Fondo: <span id="bg-rot-val">58°</span></label>
@@ -220,7 +220,9 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        // RENDERER
+        // --- CONFIGURACIÓN VISUAL ÓPTIMA ---
+        // Antialias nativo activado (bordes limpios)
+        // PixelRatio 1.5 (balance rendimiento/calidad móvil)
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
@@ -230,7 +232,7 @@
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         
         renderer.shadowMap.enabled = true;
-        // CAMBIO IMPORTANTE: PCFSoft para permitir el blur (radius)
+        // PCFSoftShadowMap permite el uso de 'radius' para difuminar (Blur)
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         document.body.appendChild(renderer.domElement);
 
@@ -243,13 +245,14 @@
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
         
-        // Mantenemos 1024 para rendimiento móvil
+        // Mantenemos 1024 para no ahogar la GPU
         sunLight.shadow.mapSize.set(1024, 1024); 
         
-        // --- EL BLUR MÁGICO ---
-        // Radius 4 difumina los bordes dentados
-        sunLight.shadow.radius = 4; 
+        // --- BLUR ESTRATÉGICO ---
+        // Esto disimula la baja resolución y el acné
+        sunLight.shadow.radius = 3; 
         
+        // Frustum ajustado (20)
         const d = 20; 
         sunLight.shadow.camera.left = -d;
         sunLight.shadow.camera.right = d;
@@ -258,9 +261,9 @@
         sunLight.shadow.camera.near = 0.5;
         sunLight.shadow.camera.far = 150; 
         
-        // Fix acné
-        sunLight.shadow.bias = -0.001;  
-        sunLight.shadow.normalBias = 0.05; // Un poco menos agresivo con SoftShadows
+        // Bias conservador (gracias al blur y la focalización)
+        sunLight.shadow.bias = -0.0005;  
+        sunLight.shadow.normalBias = 0.04; 
         
         scene.add(sunLight); scene.add(sunLight.target); 
         
@@ -295,6 +298,7 @@
             const size = new THREE.Vector3();
             new THREE.Box3().setFromObject(originalModule).getSize(size);
             originalModule.traverse((child) => { if (child.isMesh) { child.material.lightMap = lightmapTexture; child.material.lightMapIntensity = 1.0; child.material.aoMap = lightmapTexture; child.material.aoMapIntensity = 1.0; child.material.envMapIntensity = 0.1; child.material.side = THREE.DoubleSide; 
+                // ACTIVAMOS SOMBRAS DINÁMICAS (Necesarias en runners modulares)
                 child.castShadow = true; 
                 child.receiveShadow = true; 
             } });
