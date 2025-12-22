@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Analog High Jump</title>
+    <title>Juego 3D - AA + Res 1.2</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -75,7 +75,7 @@
     <div id="settings-ui" class="ui-element">
         <div id="fps-display">FPS: 0</div>
         
-        <label title="Resolución alta (1.1x) o baja (0.7x). Baja para ganar FPS.">
+        <label title="Resolución alta (1.2x) o baja (0.7x). Baja para ganar FPS.">
             Resolución HD <input type="checkbox" id="res-toggle" checked>
         </label>
         
@@ -132,16 +132,15 @@
         // Optimización
         const environmentMeshes = [];
 
-        // --- FÍSICAS "ATLETA" (Analógicas pero potentes) ---
-        const maxMoveSpeed = 11.0; // Antes 8.0 -> Más velocidad para compensar joystick suave
+        // --- FÍSICAS "ATLETA" (Analogicas) ---
+        const maxMoveSpeed = 11.0; 
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
         let isMoving = false;
 
         let velocityY = 0;
-        // Salto más potente y gravedad más fuerte (sensación "snappy")
-        const gravity = -50.0; // Antes -30/40
-        const jumpStrength = 18.0; // Antes 14
+        const gravity = -50.0; 
+        const jumpStrength = 18.0; 
         let isGrounded = false;
 
         // SISTEMA DE COLISIONES (RAYCAST)
@@ -173,7 +172,8 @@
 
         resToggle.addEventListener('change', (e) => {
             const isHD = e.target.checked;
-            const ratio = isHD ? Math.min(window.devicePixelRatio, 1.1) : 0.7;
+            // CAMBIO: 1.2 si HD, 0.7 si Low
+            const ratio = isHD ? Math.min(window.devicePixelRatio, 1.2) : 0.7;
             renderer.setPixelRatio(ratio);
         });
 
@@ -249,7 +249,6 @@
             }
             joystickThumb.style.transform = `translate(${x}px, ${y}px)`;
             
-            // ANALÓGICO: Mantenemos la intensidad del empuje (0.0 a 1.0)
             joystickVector.x = x / maxRadius;
             joystickVector.y = y / maxRadius; 
         };
@@ -293,9 +292,10 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+        // --- CAMBIOS SOLICITADOS: AA True, Ratio 1.2 ---
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.1)); 
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2)); 
         
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
         renderer.toneMappingExposure = 1.0;
@@ -555,12 +555,10 @@
             
             if (length > 0.1) { 
                 isMoving = true;
-                // --- VELOCIDAD VARIABLE (ANALOGICA) ---
                 if (length > 1) { 
                     moveDirection.normalize(); 
                     currentSpeed = maxMoveSpeed; 
                 } else { 
-                    // Sensible a la intensidad del dedo
                     currentSpeed = maxMoveSpeed * length; 
                 }
             } else {
@@ -583,7 +581,6 @@
             let proposedY = playerContainer.position.y + velocityY * dt;
             const floorY = getEnvironmentHeight(playerContainer.position);
             
-            // Actualizar Blob Shadow
             if (blobShadow) {
                 if (floorY > -500) {
                     blobShadow.visible = true;
