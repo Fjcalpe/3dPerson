@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Performance Master</title>
+    <title>Juego 3D - Gameplay Fix</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -16,18 +16,18 @@
             padding: 10px; border-radius: 4px;
             text-align: right; z-index: 200; font-family: monospace;
             border: 1px solid #00ff00;
-            min-width: 200px;
+            min-width: 180px;
         }
-        #settings-ui label { font-size: 12px; display: block; margin-bottom: 8px; color: white; cursor: pointer; }
-        #settings-ui input[type=checkbox] { margin-right: 8px; }
+        #settings-ui label { font-size: 13px; display: flex; justify-content: flex-end; align-items: center; margin-bottom: 8px; color: white; cursor: pointer; }
+        #settings-ui input[type=checkbox] { margin-left: 8px; transform: scale(1.2); }
         
         #fps-display {
-            font-size: 16px; font-weight: bold; color: #ffff00; margin-bottom: 10px;
-            border-bottom: 1px solid #555; padding-bottom: 5px;
+            font-size: 18px; font-weight: bold; color: #ffff00; margin-bottom: 12px;
+            border-bottom: 1px solid #555; padding-bottom: 5px; text-align: center;
         }
 
-        .stat-row { font-size: 11px; margin-bottom: 4px; color: #aaa; }
         .divider { border: 0; border-top: 1px solid #555; margin: 8px 0; }
+        .stat-row { font-size: 11px; color: #aaa; margin-bottom: 4px; }
 
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
@@ -75,20 +75,25 @@
     <div id="settings-ui" class="ui-element">
         <div id="fps-display">FPS: 0</div>
         
-        <label title="Si se desactiva, solo el personaje proyecta sombra. Ahorra MUCHO rendimiento.">
-            <input type="checkbox" id="env-shadows-toggle" checked> Sombra Escenario
-        </label>
-        <label title="Baja la resolución de la sombra a 512px.">
-            <input type="checkbox" id="low-res-shadows"> Sombras Low-Res
+        <label title="Resolución alta (1.1x) o baja (0.7x). Baja para ganar FPS.">
+            Resolución HD <input type="checkbox" id="res-toggle" checked>
         </label>
         
+        <label title="Activa o desactiva las sombras del sol.">
+            Sombras <input type="checkbox" id="shadows-toggle" checked>
+        </label>
+        
+        <label title="Calidad del mapa de sombras (1024px vs 512px).">
+            Sombras HQ <input type="checkbox" id="shadows-hq-toggle" checked>
+        </label>
+
         <hr class="divider">
         <div class="stat-row">Physics Steps: <span id="phys-steps">1</span></div>
         <div class="stat-row">Triángulos: <span id="tri-count">0</span></div>
         
         <hr class="divider">
         <label>
-            <input type="checkbox" id="collider-debug"> Ver Rayos Debug
+            Ver Rayos Debug <input type="checkbox" id="collider-debug">
         </label>
     </div>
 
@@ -114,27 +119,29 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
+        let blobShadow; // Sombra falsa para referencia visual
         const clock = new THREE.Clock();
         
-        // FPS
+        // FPS Variables
         let lastTime = performance.now();
         let frames = 0;
         const fpsDisplay = document.getElementById('fps-display');
         const physStepsDisplay = document.getElementById('phys-steps');
         const uiTriCount = document.getElementById('tri-count');
 
-        // GESTIÓN DE OBJETOS VISUALES (Para optimización)
-        const environmentMeshes = []; // Guardamos referencias para apagar sus sombras
+        // Optimización
+        const environmentMeshes = [];
 
-        // --- FÍSICAS ---
+        // --- FÍSICAS AJUSTADAS ---
         const maxMoveSpeed = 8.0; 
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
         let isMoving = false;
 
         let velocityY = 0;
-        const gravity = -40.0; 
-        const jumpStrength = 14.0; 
+        // Gravedad y Salto suavizados para más control
+        const gravity = -35.0; 
+        const jumpStrength = 13.0; 
         let isGrounded = false;
 
         // SISTEMA DE COLISIONES (RAYCAST)
@@ -159,29 +166,36 @@
         let previousMousePosition = { x: 0, y: 0 };
 
         // --- CONTROLES UI ---
-        const envShadowsToggle = document.getElementById('env-shadows-toggle');
-        const lowResShadowsToggle = document.getElementById('low-res-shadows');
+        const resToggle = document.getElementById('res-toggle');
+        const shadowsToggle = document.getElementById('shadows-toggle');
+        const shadowsHqToggle = document.getElementById('shadows-hq-toggle');
         const colliderDebugToggle = document.getElementById('collider-debug');
 
-        // OPTIMIZACIÓN 1: Sombra Escenario ON/OFF
-        envShadowsToggle.addEventListener('change', (e) => {
-            const cast = e.target.checked;
-            // Recorremos todos los objetos del escenario y cambiamos su propiedad
-            environmentMeshes.forEach(mesh => {
-                mesh.castShadow = cast;
-            });
+        // 1. Resolución
+        resToggle.addEventListener('change', (e) => {
+            const isHD = e.target.checked;
+            const ratio = isHD ? Math.min(window.devicePixelRatio, 1.1) : 0.7;
+            renderer.setPixelRatio(ratio);
         });
 
-        // OPTIMIZACIÓN 2: Sombras Low Res (Requiere reconstruir mapa a veces, pero probamos resize)
-        lowResShadowsToggle.addEventListener('change', (e) => {
-            const isLowRes = e.target.checked;
-            const size = isLowRes ? 512 : 1024;
-            
-            if (sunLight && sunLight.shadow && sunLight.shadow.map) {
+        // 2. Sombras ON/OFF
+        shadowsToggle.addEventListener('change', (e) => {
+            const isOn = e.target.checked;
+            sunLight.castShadow = isOn;
+            environmentMeshes.forEach(m => m.castShadow = isOn);
+            if (playerContainer) playerContainer.traverse(c => { if(c.isMesh) c.castShadow = isOn; });
+        });
+
+        // 3. Sombras Calidad
+        shadowsHqToggle.addEventListener('change', (e) => {
+            const isHQ = e.target.checked;
+            const size = isHQ ? 1024 : 512;
+            if (sunLight && sunLight.shadow) {
                 sunLight.shadow.mapSize.set(size, size);
-                // Forzamos actualización liberando el mapa anterior
-                sunLight.shadow.map.dispose();
-                sunLight.shadow.map = null;
+                if(sunLight.shadow.map) {
+                    sunLight.shadow.map.dispose();
+                    sunLight.shadow.map = null;
+                }
             }
         });
 
@@ -282,8 +296,6 @@
         
         const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        
-        // --- OPTIMIZACIÓN PIXEL RATIO 1.1 ---
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.1)); 
         
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
@@ -307,22 +319,41 @@
         scene.add(groundArrow);
         scene.add(wallArrow);
 
+        // CREAR SOMBRA FALSA (BLOB SHADOW)
+        // Crea una textura redonda suave programáticamente
+        function createShadowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            gradient.addColorStop(0, 'rgba(0,0,0,0.6)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(canvas);
+        }
+        
+        const shadowMat = new THREE.MeshBasicMaterial({ 
+            map: createShadowTexture(), 
+            transparent: true, 
+            depthWrite: false, // No escribe en el buffer de profundidad para evitar glitches con el suelo
+            polygonOffset: true, polygonOffsetFactor: -1 // Ayuda a que se dibuje encima del suelo
+        });
+        const shadowGeo = new THREE.PlaneGeometry(0.8, 0.8);
+        blobShadow = new THREE.Mesh(shadowGeo, shadowMat);
+        blobShadow.rotation.x = -Math.PI / 2; // Horizontal
+        blobShadow.visible = false;
+        scene.add(blobShadow);
+
+
         // LUZ SOL
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
-        
-        // Default 1024
         sunLight.shadow.mapSize.set(1024, 1024); 
         sunLight.shadow.radius = 3; 
-        
         const d = 20; 
-        sunLight.shadow.camera.left = -d;
-        sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d;
-        sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.camera.near = 0.5;
-        sunLight.shadow.camera.far = 150; 
-        
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
         sunLight.shadow.bias = -0.001;  
         sunLight.shadow.normalBias = 0.05; 
         scene.add(sunLight); scene.add(sunLight.target); 
@@ -361,7 +392,7 @@
             mesh.frustumCulled = false; 
             scene.add(mesh);
             collisionMeshes.push(mesh);
-            environmentMeshes.push(mesh); // Añadir a la lista de optimización
+            environmentMeshes.push(mesh);
         }
 
         addPlatform(0, 2.0, -15);
@@ -404,7 +435,6 @@
                         child.castShadow = true; 
                         child.receiveShadow = true; 
                         
-                        // Guardar referencia para poder apagar su sombra luego
                         environmentMeshes.push(child);
                     }
                 });
@@ -464,16 +494,45 @@
             projectiles.push(proj);
         }
 
-        // --- SISTEMA FÍSICO RAYCAST ---
+        // --- SISTEMA FÍSICO RAYCAST MEJORADO (BIG FEET) ---
+        // Lanza múltiples rayos para simular que el personaje tiene pies y no un alfiler
         function getEnvironmentHeight(position) {
             const origin = position.clone();
             origin.y += 1.0; 
-            raycaster.set(origin, downVector);
-            raycaster.far = 10.0; 
+            
+            // Radio de los "pies" del personaje
+            const footRadius = 0.35; 
+            // Puntos a comprobar: Centro, y 4 puntos alrededor
+            const offsets = [
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(footRadius, 0, 0),
+                new THREE.Vector3(-footRadius, 0, 0),
+                new THREE.Vector3(0, 0, footRadius),
+                new THREE.Vector3(0, 0, -footRadius)
+            ];
+
+            let maxHeight = -999;
+            let hitFound = false;
+
+            for(let i=0; i<offsets.length; i++) {
+                const rayOrigin = origin.clone().add(offsets[i]);
+                raycaster.set(rayOrigin, downVector);
+                raycaster.far = 10.0; 
+                
+                const intersects = raycaster.intersectObjects(collisionMeshes, true);
+                if (intersects.length > 0) {
+                    const hitY = intersects[0].point.y;
+                    if (hitY > maxHeight) {
+                        maxHeight = hitY;
+                        hitFound = true;
+                    }
+                }
+            }
+
+            // Debug del rayo central
             if (groundArrow) { groundArrow.position.copy(origin); groundArrow.setDirection(downVector); }
-            const intersects = raycaster.intersectObjects(collisionMeshes, true);
-            if (intersects.length > 0) return intersects[0].point.y;
-            return -999; 
+            
+            return hitFound ? maxHeight : -999;
         }
 
         function checkWall(position, direction) {
@@ -523,6 +582,17 @@
             let proposedY = playerContainer.position.y + velocityY * dt;
             const floorY = getEnvironmentHeight(playerContainer.position);
             
+            // Actualizar posición de la sombra falsa (siempre pegada al suelo real)
+            if (blobShadow) {
+                if (floorY > -500) {
+                    blobShadow.visible = true;
+                    // Sigue al jugador en X/Z, pero en Y se queda en el suelo (+ un pelín para no Z-fight)
+                    blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z);
+                } else {
+                    blobShadow.visible = false;
+                }
+            }
+
             if (proposedY <= floorY && velocityY <= 0) {
                 playerContainer.position.y = floorY;
                 velocityY = 0;
