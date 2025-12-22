@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Performance Master</title>
+    <title>Juego 3D - FPS Master</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -16,18 +16,18 @@
             padding: 10px; border-radius: 4px;
             text-align: right; z-index: 200; font-family: monospace;
             border: 1px solid #00ff00;
-            min-width: 200px;
+            min-width: 180px;
         }
-        #settings-ui label { font-size: 12px; display: block; margin-bottom: 8px; color: white; cursor: pointer; }
-        #settings-ui input[type=checkbox] { margin-right: 8px; }
+        #settings-ui label { font-size: 13px; display: flex; justify-content: flex-end; align-items: center; margin-bottom: 8px; color: white; cursor: pointer; }
+        #settings-ui input[type=checkbox] { margin-left: 8px; transform: scale(1.2); }
         
         #fps-display {
-            font-size: 16px; font-weight: bold; color: #ffff00; margin-bottom: 10px;
-            border-bottom: 1px solid #555; padding-bottom: 5px;
+            font-size: 18px; font-weight: bold; color: #ffff00; margin-bottom: 12px;
+            border-bottom: 1px solid #555; padding-bottom: 5px; text-align: center;
         }
 
-        .stat-row { font-size: 11px; margin-bottom: 4px; color: #aaa; }
         .divider { border: 0; border-top: 1px solid #555; margin: 8px 0; }
+        .stat-row { font-size: 11px; color: #aaa; margin-bottom: 4px; }
 
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
@@ -75,20 +75,25 @@
     <div id="settings-ui" class="ui-element">
         <div id="fps-display">FPS: 0</div>
         
-        <label title="Si se desactiva, solo el personaje proyecta sombra. Ahorra MUCHO rendimiento.">
-            <input type="checkbox" id="env-shadows-toggle" checked> Sombra Escenario
-        </label>
-        <label title="Baja la resolución de la sombra a 512px.">
-            <input type="checkbox" id="low-res-shadows"> Sombras Low-Res
+        <label title="Resolución alta (1.1x) o baja (0.7x). Baja para ganar FPS.">
+            Resolución HD <input type="checkbox" id="res-toggle" checked>
         </label>
         
+        <label title="Activa o desactiva las sombras del sol.">
+            Sombras <input type="checkbox" id="shadows-toggle" checked>
+        </label>
+        
+        <label title="Calidad del mapa de sombras (1024px vs 512px).">
+            Sombras HQ <input type="checkbox" id="shadows-hq-toggle" checked>
+        </label>
+
         <hr class="divider">
         <div class="stat-row">Physics Steps: <span id="phys-steps">1</span></div>
         <div class="stat-row">Triángulos: <span id="tri-count">0</span></div>
         
         <hr class="divider">
         <label>
-            <input type="checkbox" id="collider-debug"> Ver Rayos Debug
+            Ver Rayos Debug <input type="checkbox" id="collider-debug">
         </label>
     </div>
 
@@ -116,15 +121,15 @@
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
         const clock = new THREE.Clock();
         
-        // FPS
+        // FPS Variables
         let lastTime = performance.now();
         let frames = 0;
         const fpsDisplay = document.getElementById('fps-display');
         const physStepsDisplay = document.getElementById('phys-steps');
         const uiTriCount = document.getElementById('tri-count');
 
-        // GESTIÓN DE OBJETOS VISUALES (Para optimización)
-        const environmentMeshes = []; // Guardamos referencias para apagar sus sombras
+        // Optimización
+        const environmentMeshes = [];
 
         // --- FÍSICAS ---
         const maxMoveSpeed = 8.0; 
@@ -159,29 +164,40 @@
         let previousMousePosition = { x: 0, y: 0 };
 
         // --- CONTROLES UI ---
-        const envShadowsToggle = document.getElementById('env-shadows-toggle');
-        const lowResShadowsToggle = document.getElementById('low-res-shadows');
+        const resToggle = document.getElementById('res-toggle');
+        const shadowsToggle = document.getElementById('shadows-toggle');
+        const shadowsHqToggle = document.getElementById('shadows-hq-toggle');
         const colliderDebugToggle = document.getElementById('collider-debug');
 
-        // OPTIMIZACIÓN 1: Sombra Escenario ON/OFF
-        envShadowsToggle.addEventListener('change', (e) => {
-            const cast = e.target.checked;
-            // Recorremos todos los objetos del escenario y cambiamos su propiedad
-            environmentMeshes.forEach(mesh => {
-                mesh.castShadow = cast;
-            });
+        // 1. Resolución (Simula AA o Performance)
+        resToggle.addEventListener('change', (e) => {
+            const isHD = e.target.checked;
+            // 1.1 para que se vea bien, 0.7 para que vuele
+            const ratio = isHD ? Math.min(window.devicePixelRatio, 1.1) : 0.7;
+            renderer.setPixelRatio(ratio);
         });
 
-        // OPTIMIZACIÓN 2: Sombras Low Res (Requiere reconstruir mapa a veces, pero probamos resize)
-        lowResShadowsToggle.addEventListener('change', (e) => {
-            const isLowRes = e.target.checked;
-            const size = isLowRes ? 512 : 1024;
-            
-            if (sunLight && sunLight.shadow && sunLight.shadow.map) {
+        // 2. Sombras ON/OFF
+        shadowsToggle.addEventListener('change', (e) => {
+            const isOn = e.target.checked;
+            sunLight.castShadow = isOn;
+            // Opcional: Apagar sombras de objetos también para ahorrar CPU
+            environmentMeshes.forEach(m => m.castShadow = isOn);
+            if (playerContainer) {
+                playerContainer.traverse(c => { if(c.isMesh) c.castShadow = isOn; });
+            }
+        });
+
+        // 3. Sombras Calidad
+        shadowsHqToggle.addEventListener('change', (e) => {
+            const isHQ = e.target.checked;
+            const size = isHQ ? 1024 : 512;
+            if (sunLight && sunLight.shadow) {
                 sunLight.shadow.mapSize.set(size, size);
-                // Forzamos actualización liberando el mapa anterior
-                sunLight.shadow.map.dispose();
-                sunLight.shadow.map = null;
+                if(sunLight.shadow.map) {
+                    sunLight.shadow.map.dispose();
+                    sunLight.shadow.map = null;
+                }
             }
         });
 
@@ -280,10 +296,12 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        // --- CAMBIO IMPORTANTE: Antialias OFF por defecto ---
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: false, // OFF PARA MAX RENDIMIENTO
+            powerPreference: "high-performance" 
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        
-        // --- OPTIMIZACIÓN PIXEL RATIO 1.1 ---
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.1)); 
         
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
@@ -309,20 +327,13 @@
 
         // LUZ SOL
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
-        sunLight.castShadow = true;
-        
-        // Default 1024
-        sunLight.shadow.mapSize.set(1024, 1024); 
+        sunLight.castShadow = true; // Por defecto ON
+        sunLight.shadow.mapSize.set(1024, 1024); // Default HQ
         sunLight.shadow.radius = 3; 
         
         const d = 20; 
-        sunLight.shadow.camera.left = -d;
-        sunLight.shadow.camera.right = d;
-        sunLight.shadow.camera.top = d;
-        sunLight.shadow.camera.bottom = -d;
-        sunLight.shadow.camera.near = 0.5;
-        sunLight.shadow.camera.far = 150; 
-        
+        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
         sunLight.shadow.bias = -0.001;  
         sunLight.shadow.normalBias = 0.05; 
         scene.add(sunLight); scene.add(sunLight.target); 
@@ -361,7 +372,7 @@
             mesh.frustumCulled = false; 
             scene.add(mesh);
             collisionMeshes.push(mesh);
-            environmentMeshes.push(mesh); // Añadir a la lista de optimización
+            environmentMeshes.push(mesh);
         }
 
         addPlatform(0, 2.0, -15);
@@ -404,7 +415,6 @@
                         child.castShadow = true; 
                         child.receiveShadow = true; 
                         
-                        // Guardar referencia para poder apagar su sombra luego
                         environmentMeshes.push(child);
                     }
                 });
