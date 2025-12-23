@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - CPU Vertex Wind</title>
+    <title>Juego 3D - Sliders Viento</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -17,6 +17,20 @@
             font-family: monospace; font-weight: bold; font-size: 14px;
             pointer-events: none; z-index: 200;
         }
+
+        /* --- NUEVO PANEL DE SLIDERS --- */
+        #debug-panel {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0, 0, 0, 0.6); color: white;
+            padding: 15px; border-radius: 8px;
+            z-index: 200; width: 220px;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .control-group { margin-bottom: 10px; }
+        .control-group label { display: block; font-size: 12px; margin-bottom: 5px; color: #ccc; }
+        .control-group input { width: 100%; cursor: pointer; }
+        .value-display { float: right; color: #00ff00; font-weight: bold; }
 
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
@@ -60,6 +74,18 @@
 </head>
 <body>
     <div id="fps-display">FPS: 0</div>
+    
+    <div id="debug-panel">
+        <div class="control-group">
+            <label>Fuerza Viento <span id="val-strength" class="value-display">1.5</span></label>
+            <input type="range" id="input-strength" min="0" max="3.0" step="0.1" value="1.5">
+        </div>
+        <div class="control-group">
+            <label>Velocidad Olas <span id="val-speed" class="value-display">6.0</span></label>
+            <input type="range" id="input-speed" min="0" max="15.0" step="0.5" value="6.0">
+        </div>
+    </div>
+
     <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar</div>
 
     <div id="joystick-container" class="ui-element"><div id="joystick-thumb"></div></div>
@@ -94,8 +120,30 @@
         const collisionMeshes = [];
         
         // --- SISTEMA DE VIENTO CPU ---
-        const grassMeshes = []; // Lista de hierbas a animar
-        const globalWindVector = new THREE.Vector3(1, 0, 0); // Viento hacia el ESTE (X+)
+        const grassMeshes = []; 
+        const tempQuat = new THREE.Quaternion(); 
+        const tempWindDir = new THREE.Vector3(); // Solo dirección
+
+        // --- PARÁMETROS VIENTO (UI) ---
+        const windParams = {
+            strength: 1.5,
+            speed: 6.0
+        };
+
+        // UI Listeners
+        const uiStrength = document.getElementById('input-strength');
+        const valStrength = document.getElementById('val-strength');
+        uiStrength.addEventListener('input', (e) => { 
+            windParams.strength = parseFloat(e.target.value); 
+            valStrength.innerText = windParams.strength.toFixed(1);
+        });
+
+        const uiSpeed = document.getElementById('input-speed');
+        const valSpeed = document.getElementById('val-speed');
+        uiSpeed.addEventListener('input', (e) => { 
+            windParams.speed = parseFloat(e.target.value);
+            valSpeed.innerText = windParams.speed.toFixed(1);
+        });
 
         // --- FÍSICAS ---
         const maxMoveSpeed = 11.0; 
@@ -167,7 +215,7 @@
 
         // Inputs Cámara
         document.addEventListener('pointerdown', (e) => {
-            if (e.target.closest('.ui-element')) return;
+            if (e.target.closest('.ui-element') || e.target.closest('#debug-panel')) return;
             isDraggingCamera = true;
             previousMousePosition = { x: e.clientX, y: e.clientY };
         });
@@ -278,7 +326,7 @@
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; lightmapTexture.channel = 1; 
         
-        // --- CARGA MÓDULO (PREPARACIÓN DEFORMACIÓN CPU) ---
+        // --- CARGA MÓDULO ---
         gltfLoader.load('./MN_SCENE_01.gltf', function (gltf) {
             const masterModule = gltf.scene;
             const totalBox = new THREE.Box3().setFromObject(masterModule);
@@ -309,19 +357,16 @@
                             const isMontes = (name.includes("montes") || parentName.includes("montes"));
 
                             // --- SETUP VIENTO CPU ---
-                            // Si es hierba, preparamos su geometría para deformarla manualmente
                             if (isHierba && !isMontes) {
-                                // 1. CLONAR GEOMETRÍA: Obligatorio para deformar cada una individualmente
                                 child.geometry = child.geometry.clone();
-                                
-                                // 2. GUARDAR POSICIONES ORIGINALES (Base para calcular deformación)
                                 const posAttribute = child.geometry.attributes.position;
-                                child.userData.originalPositions = posAttribute.array.slice(); // Copia del array
-                                
-                                // 3. AÑADIR A LISTA DE ANIMACIÓN
+                                child.userData.originalPositions = posAttribute.array.slice(); 
+                                child.userData.worldOffset = new THREE.Vector2(
+                                    x * spacingX + child.position.x,
+                                    z * spacingZ + child.position.z
+                                );
                                 grassMeshes.push(child);
                             }
-                            
                             else if (name.includes("colision") || name.includes("collision")) {
                                 child.visible = false;
                                 collisionMeshes.push(child);
@@ -504,44 +549,62 @@
             let delta = Math.min(clock.getDelta(), 0.1); 
             const elapsed = clock.getElapsedTime();
 
-            // --- ANIMACIÓN VIENTO (DEFORMACIÓN VÉRTICES CPU) ---
-            // Esta técnica es pesada pero 100% segura visualmente
+            // --- ANIMACIÓN VIENTO (ROTACIÓN TRIGONOMÉTRICA PARA CONSERVAR LARGO) ---
             
-            // 1. Calcular Viento Global (Dirección X+)
-            const windSpeed = 3.0;
-            // Usamos (sin + 1) / 2 para empuje positivo (0 a 1)
-            const windPulse = (Math.sin(elapsed * windSpeed) + 1.0) * 0.5;
-            const windStrength = windPulse * 0.5 + 0.1; // Intensidad base
-            
-            // Vector de viento global
-            globalWindVector.set(1, 0, 0).multiplyScalar(windStrength);
+            // Usamos los parámetros del SLIDER
+            const waveLengthScale = 0.2;   
+            const globalDir = new THREE.Vector3(1, 0, 0); 
 
-            // 2. Iterar sobre cada objeto de hierba
             for (let i = 0; i < grassMeshes.length; i++) {
                 const mesh = grassMeshes[i];
                 const originalPos = mesh.userData.originalPositions;
                 const currentPos = mesh.geometry.attributes.position.array;
                 
-                // 3. Convertir Viento Global a Local
-                // Usamos la inversa de la rotación del objeto
-                const inverseRot = mesh.quaternion.clone().invert();
-                const localWind = globalWindVector.clone().applyQuaternion(inverseRot);
+                const wX = mesh.userData.worldOffset ? mesh.userData.worldOffset.x : mesh.position.x;
+                const wZ = mesh.userData.worldOffset ? mesh.userData.worldOffset.y : mesh.position.z;
+
+                // Fase espacial para olas
+                const spatialPhase = (wX * waveLengthScale) + (wZ * waveLengthScale * 0.5);
                 
-                // 4. Deformar Vértices
+                // Olas basadas en velocidad del slider
+                const waveA = Math.sin(spatialPhase - elapsed * windParams.speed);
+                const waveB = Math.cos(spatialPhase * 0.5 - elapsed * windParams.speed * 0.7); 
+                
+                // Intensidad de onda base (0 a 1 aprox, con picos)
+                let waveVal = (waveA + waveB + 1.5) * 0.5; // Normalizar un poco
+                
+                // Aplicar Fuerza del Slider
+                // Esto ahora representa el "Ángulo máximo de doblado" en radianes
+                let bendAngleFactor = waveVal * windParams.strength; 
+
+                // Convertir dirección global a local
+                mesh.getWorldQuaternion(tempQuat);
+                const inverseRot = tempQuat.invert();
+                
+                // Vector dirección local (Sin magnitud, solo direccion)
+                tempWindDir.copy(globalDir).applyQuaternion(inverseRot).normalize();
+                
+                // Deformar Vértices con rotación
                 for (let j = 0; j < originalPos.length; j += 3) {
                     const ox = originalPos[j];
                     const oy = originalPos[j+1];
                     const oz = originalPos[j+2];
                     
-                    if (oy <= 0.1) continue; // Base quieta
+                    if (oy <= 0.1) continue; 
                     
-                    // Curvatura Cuadrática
-                    const bend = oy * oy * 0.5;
+                    // El ángulo aumenta con la altura (oy)
+                    // Multiplicamos por 0.5 para que strength=1 no sea 90 grados directos
+                    const theta = bendAngleFactor * oy * 0.5;
                     
-                    // Aplicar desplazamiento
-                    currentPos[j]   = ox + localWind.x * bend;
-                    currentPos[j+1] = oy - bend * 0.2; // Acortar
-                    currentPos[j+2] = oz + localWind.z * bend;
+                    // FÍSICA DE ROTACIÓN (Conservar longitud)
+                    // Desplazamiento horizontal = seno del angulo * altura original
+                    // Nueva altura = coseno del angulo * altura original
+                    const horizontalOffset = Math.sin(theta) * oy;
+                    const newHeight = Math.cos(theta) * oy;
+                    
+                    currentPos[j]   = ox + tempWindDir.x * horizontalOffset;
+                    currentPos[j+1] = newHeight; // La altura baja naturalmente al curvarse
+                    currentPos[j+2] = oz + tempWindDir.z * horizontalOffset;
                 }
                 mesh.geometry.attributes.position.needsUpdate = true;
             }
