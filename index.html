@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Sliders Viento</title>
+    <title>Juego 3D - Hierba Mecánica Shiny</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -18,17 +18,21 @@
             pointer-events: none; z-index: 200;
         }
 
-        /* --- NUEVO PANEL DE SLIDERS --- */
         #debug-panel {
             position: absolute; top: 10px; left: 10px;
             background: rgba(0, 0, 0, 0.6); color: white;
             padding: 15px; border-radius: 8px;
             z-index: 200; width: 220px;
+            max-height: 80vh; overflow-y: auto; 
             backdrop-filter: blur(4px);
             border: 1px solid rgba(255,255,255,0.2);
         }
-        .control-group { margin-bottom: 10px; }
-        .control-group label { display: block; font-size: 12px; margin-bottom: 5px; color: #ccc; }
+        .panel-section { margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+        .panel-section:last-child { border-bottom: none; }
+        .section-title { font-size: 10px; text-transform: uppercase; color: #aaa; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold;}
+        
+        .control-group { margin-bottom: 8px; }
+        .control-group label { display: block; font-size: 12px; margin-bottom: 2px; color: #ccc; }
         .control-group input { width: 100%; cursor: pointer; }
         .value-display { float: right; color: #00ff00; font-weight: bold; }
 
@@ -76,13 +80,32 @@
     <div id="fps-display">FPS: 0</div>
     
     <div id="debug-panel">
-        <div class="control-group">
-            <label>Fuerza Viento <span id="val-strength" class="value-display">1.5</span></label>
-            <input type="range" id="input-strength" min="0" max="3.0" step="0.1" value="1.5">
+        <div class="panel-section">
+            <div class="section-title">Viento</div>
+            <div class="control-group">
+                <label>Fuerza <span id="val-strength" class="value-display">1.1</span></label>
+                <input type="range" id="input-strength" min="0" max="3.0" step="0.1" value="1.1">
+            </div>
+            <div class="control-group">
+                <label>Velocidad <span id="val-speed" class="value-display">3.0</span></label>
+                <input type="range" id="input-speed" min="0" max="15.0" step="0.5" value="3.0">
+            </div>
         </div>
-        <div class="control-group">
-            <label>Velocidad Olas <span id="val-speed" class="value-display">6.0</span></label>
-            <input type="range" id="input-speed" min="0" max="15.0" step="0.5" value="6.0">
+        
+        <div class="panel-section">
+            <div class="section-title">Iluminación</div>
+            <div class="control-group">
+                <label>Sol <span id="val-sun" class="value-display">3.0</span></label>
+                <input type="range" id="input-sun" min="0" max="10.0" step="0.1" value="3.0">
+            </div>
+            <div class="control-group">
+                <label>Ambiente <span id="val-amb" class="value-display">0.4</span></label>
+                <input type="range" id="input-amb" min="0" max="2.0" step="0.05" value="0.4">
+            </div>
+            <div class="control-group">
+                <label>Reflejos <span id="val-env" class="value-display">0.8</span></label>
+                <input type="range" id="input-env" min="0" max="2.0" step="0.05" value="0.8">
+            </div>
         </div>
     </div>
 
@@ -119,18 +142,14 @@
 
         const collisionMeshes = [];
         
-        // --- SISTEMA DE VIENTO CPU ---
+        // --- SISTEMA DE VIENTO ---
         const grassMeshes = []; 
         const tempQuat = new THREE.Quaternion(); 
-        const tempWindDir = new THREE.Vector3(); // Solo dirección
+        const tempWindDir = new THREE.Vector3(); 
+        const windParams = { strength: 1.1, speed: 3.0 };
 
-        // --- PARÁMETROS VIENTO (UI) ---
-        const windParams = {
-            strength: 1.5,
-            speed: 6.0
-        };
-
-        // UI Listeners
+        // --- INTERFAZ USUARIO (LISTENERS) ---
+        
         const uiStrength = document.getElementById('input-strength');
         const valStrength = document.getElementById('val-strength');
         uiStrength.addEventListener('input', (e) => { 
@@ -145,37 +164,54 @@
             valSpeed.innerText = windParams.speed.toFixed(1);
         });
 
-        // --- FÍSICAS ---
+        const uiSun = document.getElementById('input-sun');
+        const valSun = document.getElementById('val-sun');
+        uiSun.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            valSun.innerText = val.toFixed(1);
+            if(sunLight) sunLight.intensity = val;
+        });
+
+        const uiAmb = document.getElementById('input-amb');
+        const valAmb = document.getElementById('val-amb');
+        uiAmb.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            valAmb.innerText = val.toFixed(2);
+            if(hemiLight) hemiLight.intensity = val;
+        });
+
+        const uiEnv = document.getElementById('input-env');
+        const valEnv = document.getElementById('val-env');
+        uiEnv.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            valEnv.innerText = val.toFixed(2);
+            scene.environmentIntensity = val;
+        });
+
+        // --- FÍSICAS Y JUEGO ---
         const maxMoveSpeed = 11.0; 
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
         let isMoving = false;
-
         let velocityY = 0;
         const gravity = -50.0; 
         const jumpStrength = 18.0; 
-        
         let isGrounded = false;
         let landingCooldown = 0.0; 
         const LANDING_PAUSE_DURATION = 0.2; 
-
         const raycaster = new THREE.Raycaster();
         const downVector = new THREE.Vector3(0, -1, 0);
-
         const projectiles = [];
         const projectileSpeed = 20.0;
-
+        
         let sunOffset = new THREE.Vector3(); 
         const FIXED_SETTINGS = { vert: 35, horiz: 215, intensity: 3.0, amb: 0.4, color: 0xffeeb1 };
         const keyStates = { w: false, a: false, s: false, d: false };
-
         const camSettings = { radius: 4.5, minRadius: 1.5, currentRadius: 4.5, theta: Math.PI, phi: 0.45 };
         const cameraRaycaster = new THREE.Raycaster();
         
         let isDraggingCamera = false;
         let previousMousePosition = { x: 0, y: 0 };
-
-        // Joystick
         let joystickVector = { x: 0, y: 0 }; 
         const joystickContainer = document.getElementById('joystick-container');
         const joystickThumb = document.getElementById('joystick-thumb');
@@ -213,7 +249,6 @@
         joystickContainer.addEventListener('touchmove', handleJoystick);
         joystickContainer.addEventListener('touchend', resetJoystick);
 
-        // Inputs Cámara
         document.addEventListener('pointerdown', (e) => {
             if (e.target.closest('.ui-element') || e.target.closest('#debug-panel')) return;
             isDraggingCamera = true;
@@ -231,7 +266,6 @@
         document.addEventListener('pointerup', () => isDraggingCamera = false);
         document.addEventListener('pointercancel', () => isDraggingCamera = false);
 
-        // Teclado
         document.addEventListener('keydown', (e) => {
             if(e.code==='KeyW') keyStates.w = true;
             if(e.code==='KeyS') keyStates.s = true;
@@ -255,7 +289,6 @@
         shootBtn.addEventListener('touchstart', triggerAction(shoot));
         shootBtn.addEventListener('mousedown', triggerAction(shoot));
 
-        // --- THREE.JS ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
@@ -269,7 +302,6 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         document.body.appendChild(renderer.domElement);
 
-        // --- ENTORNO ---
         const textureLoader = new THREE.TextureLoader();
         const bgTexture = textureLoader.load('./bg.webp', (texture) => {
             texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -278,7 +310,6 @@
             scene.environmentIntensity = 0.8; 
         });
 
-        // Blob Shadow
         function createShadowTexture() {
             const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
@@ -294,7 +325,6 @@
         blobShadow.rotation.x = -Math.PI / 2; blobShadow.visible = false;
         scene.add(blobShadow);
 
-        // Luz Sol
         const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(1024, 1024); 
@@ -315,7 +345,6 @@
 
         const gltfLoader = new GLTFLoader();
         
-        // Fondo
         const sphereGeo = new THREE.SphereGeometry(500, 32, 16); 
         sphereGeo.scale(-1, 1, 1); 
         const sphereMat = new THREE.MeshBasicMaterial({ map: bgTexture, side: THREE.DoubleSide, fog: false, depthWrite: false, toneMapped: false });
@@ -326,7 +355,6 @@
         const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
         lightmapTexture.flipY = false; lightmapTexture.channel = 1; 
         
-        // --- CARGA MÓDULO ---
         gltfLoader.load('./MN_SCENE_01.gltf', function (gltf) {
             const masterModule = gltf.scene;
             const totalBox = new THREE.Box3().setFromObject(masterModule);
@@ -336,7 +364,6 @@
             const spacingX = size.x; 
             const spacingZ = size.z;
 
-            // Parrilla 3x3
             for (let x = -1; x <= 1; x++) {
                 for (let z = -1; z <= 1; z++) {
                     let moduleInstance = masterModule.clone(); 
@@ -356,7 +383,7 @@
                             const isHierba = (name.includes("hierba") || parentName.includes("hierba"));
                             const isMontes = (name.includes("montes") || parentName.includes("montes"));
 
-                            // --- SETUP VIENTO CPU ---
+                            // --- SETUP VIENTO Y MATERIAL MECÁNICO ---
                             if (isHierba && !isMontes) {
                                 child.geometry = child.geometry.clone();
                                 const posAttribute = child.geometry.attributes.position;
@@ -366,6 +393,12 @@
                                     z * spacingZ + child.position.z
                                 );
                                 grassMeshes.push(child);
+                                
+                                // MATERIAL: HIERBA MECÁNICA (METAL PURO)
+                                if(child.material) {
+                                    child.material.metalness = 1.0; // Metal total
+                                    child.material.roughness = 0.3; // Brillante pero no espejo perfecto
+                                }
                             }
                             else if (name.includes("colision") || name.includes("collision")) {
                                 child.visible = false;
@@ -549,9 +582,7 @@
             let delta = Math.min(clock.getDelta(), 0.1); 
             const elapsed = clock.getElapsedTime();
 
-            // --- ANIMACIÓN VIENTO (ROTACIÓN TRIGONOMÉTRICA PARA CONSERVAR LARGO) ---
-            
-            // Usamos los parámetros del SLIDER
+            // --- ANIMACIÓN VIENTO (VARIACIÓN PER-VERTEX CORRECTA SIN ROMPER MESH) ---
             const waveLengthScale = 0.2;   
             const globalDir = new THREE.Vector3(1, 0, 0); 
 
@@ -563,28 +594,12 @@
                 const wX = mesh.userData.worldOffset ? mesh.userData.worldOffset.x : mesh.position.x;
                 const wZ = mesh.userData.worldOffset ? mesh.userData.worldOffset.y : mesh.position.z;
 
-                // Fase espacial para olas
-                const spatialPhase = (wX * waveLengthScale) + (wZ * waveLengthScale * 0.5);
-                
-                // Olas basadas en velocidad del slider
-                const waveA = Math.sin(spatialPhase - elapsed * windParams.speed);
-                const waveB = Math.cos(spatialPhase * 0.5 - elapsed * windParams.speed * 0.7); 
-                
-                // Intensidad de onda base (0 a 1 aprox, con picos)
-                let waveVal = (waveA + waveB + 1.5) * 0.5; // Normalizar un poco
-                
-                // Aplicar Fuerza del Slider
-                // Esto ahora representa el "Ángulo máximo de doblado" en radianes
-                let bendAngleFactor = waveVal * windParams.strength; 
-
-                // Convertir dirección global a local
                 mesh.getWorldQuaternion(tempQuat);
                 const inverseRot = tempQuat.invert();
-                
-                // Vector dirección local (Sin magnitud, solo direccion)
                 tempWindDir.copy(globalDir).applyQuaternion(inverseRot).normalize();
-                
-                // Deformar Vértices con rotación
+                const wx = tempWindDir.x;
+                const wz = tempWindDir.z;
+
                 for (let j = 0; j < originalPos.length; j += 3) {
                     const ox = originalPos[j];
                     const oy = originalPos[j+1];
@@ -592,19 +607,28 @@
                     
                     if (oy <= 0.1) continue; 
                     
-                    // El ángulo aumenta con la altura (oy)
-                    // Multiplicamos por 0.5 para que strength=1 no sea 90 grados directos
-                    const theta = bendAngleFactor * oy * 0.5;
+                    const vGlobalX = wX + ox;
+                    const vGlobalZ = wZ + oz;
+
+                    let localNoise = (Math.sin(vGlobalX * 0.5) + Math.cos(vGlobalZ * 0.3)) * 1.5;
+
+                    const spatialPhase = (vGlobalX * waveLengthScale) + (vGlobalZ * waveLengthScale * 0.5);
+                    const waveA = Math.sin(spatialPhase - elapsed * windParams.speed + localNoise);
+                    const waveB = Math.cos(spatialPhase * 0.5 - elapsed * windParams.speed * 0.7); 
                     
-                    // FÍSICA DE ROTACIÓN (Conservar longitud)
-                    // Desplazamiento horizontal = seno del angulo * altura original
-                    // Nueva altura = coseno del angulo * altura original
-                    const horizontalOffset = Math.sin(theta) * oy;
-                    const newHeight = Math.cos(theta) * oy;
-                    
-                    currentPos[j]   = ox + tempWindDir.x * horizontalOffset;
-                    currentPos[j+1] = newHeight; // La altura baja naturalmente al curvarse
-                    currentPos[j+2] = oz + tempWindDir.z * horizontalOffset;
+                    let waveVal = (waveA + waveB + 1.5) * 0.5; 
+                    let bendAngleFactor = waveVal * windParams.strength; 
+
+                    const heightInfluence = Math.pow(oy, 0.75);
+                    const theta = bendAngleFactor * heightInfluence * 0.7; 
+
+                    const deformation = Math.sin(theta) * oy * 1.3; 
+                    const crush = Math.cos(theta); 
+                    const safeCrush = crush * 0.7 + 0.3;
+
+                    currentPos[j]   = ox + wx * deformation;
+                    currentPos[j+1] = oy * safeCrush; 
+                    currentPos[j+2] = oz + wz * deformation;
                 }
                 mesh.geometry.attributes.position.needsUpdate = true;
             }
