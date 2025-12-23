@@ -2470,30 +2470,44 @@
 	"materials":[
 		{
 			"doubleSided":true,
-			"name":"suleo",
+			"name":"suelo",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
-					0.10541167855262756,
-					0.131038635969162,
-					0.022993208840489388,
+					0.3120073080062866,
+					0.2284001111984253,
+					0.0194406695663929,
 					1
 				],
 				"metallicFactor":0,
-				"roughnessFactor":0.27272728085517883
+				"roughnessFactor":0.5409091114997864
 			}
 		},
 		{
 			"doubleSided":true,
-			"name":"hierba suelo",
+			"name":"hierba perimetro",
 			"pbrMetallicRoughness":{
 				"baseColorFactor":[
-					0.02074236422777176,
-					0.06043323874473572,
-					0.036367543041706085,
+					0.3084251880645752,
+					0.35954225063323975,
+					0.006959431804716587,
 					1
 				],
 				"metallicFactor":0.19545455276966095,
 				"roughnessFactor":0.5181818008422852
+			}
+		},
+		{
+			"doubleSided":true,
+			"name":"verde hierba monte",
+			"pbrMetallicRoughness":{
+				"baseColorFactor":[
+					0.7647961378097534,
+					0.8002997636795044,
+					0.010799957439303398,
+					1
+				],
+				"metallicFactor":0,
+				"roughnessFactor":0.48181799054145813
 			}
 		},
 		{
@@ -2573,7 +2587,7 @@
 						"TEXCOORD_0":14
 					},
 					"indices":15,
-					"material":2
+					"material":3
 				},
 				{
 					"attributes":{
@@ -2582,7 +2596,7 @@
 						"TEXCOORD_0":18
 					},
 					"indices":19,
-					"material":3
+					"material":4
 				}
 			]
 		}
@@ -2627,12 +2641,12 @@
 			"componentType":5126,
 			"count":576,
 			"max":[
-				1.0424323081970215,
+				0.9977266788482666,
 				0,
-				1.0022684335708618
+				0.9957616329193115
 			],
 			"min":[
-				-1.0095994472503662,
+				-0.9965859055519104,
 				-0.02188592404127121,
 				-0.9828789830207825
 			],
@@ -2661,7 +2675,7 @@
 			"componentType":5126,
 			"count":116,
 			"max":[
-				1.0130136013031006,
+				0.9859453439712524,
 				0,
 				0.9635655879974365
 			],
