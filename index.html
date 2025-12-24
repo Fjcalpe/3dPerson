@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Grass Controls</title>
+    <title>Juego 3D - Clean View</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -18,24 +18,8 @@
             pointer-events: none; z-index: 200;
         }
 
-        #debug-panel {
-            position: absolute; top: 10px; left: 10px;
-            background: rgba(0, 0, 0, 0.7); color: white;
-            padding: 15px; border-radius: 8px;
-            z-index: 200; width: 240px;
-            max-height: 90vh; overflow-y: auto; 
-            backdrop-filter: blur(6px);
-            border: 1px solid rgba(255,255,255,0.15);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        .panel-section { margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
-        .panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-        .section-title { font-size: 11px; text-transform: uppercase; color: #ffeb3b; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold;}
-        
-        .control-group { margin-bottom: 8px; }
-        .control-group label { display: block; font-size: 12px; margin-bottom: 2px; color: #ccc; }
-        .control-group input[type=range] { width: 100%; cursor: pointer; accent-color: #ffeb3b; display: block; }
-        .value-display { float: right; color: #ffeb3b; font-weight: bold; font-size: 12px; }
+        /* Panel eliminado visualmente */
+        #debug-panel { display: none; }
 
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
@@ -85,27 +69,6 @@
     <div id="fps-display">FPS: 0</div>
     <div id="error-log"></div>
     
-    <div id="debug-panel">
-        <div class="panel-section">
-            <div class="section-title">Generador de Hierba</div>
-            
-            <div class="control-group">
-                <label>Densidad (Cantidad) <span id="val-grass-count" class="value-display">3000</span></label>
-                <input type="range" id="input-grass-count" min="1000" max="20000" step="500" value="3000">
-            </div>
-
-            <div class="control-group">
-                <label>Anchura Brizna <span id="val-grass-width" class="value-display">0.12</span></label>
-                <input type="range" id="input-grass-width" min="0.05" max="0.3" step="0.01" value="0.12">
-            </div>
-
-            <div class="control-group">
-                <label>Escala Ruido (Parches) <span id="val-grass-noise" class="value-display">0.1</span></label>
-                <input type="range" id="input-grass-noise" min="0.01" max="0.5" step="0.01" value="0.1">
-            </div>
-        </div>
-    </div>
-
     <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar</div>
 
     <div id="joystick-container" class="ui-element"><div id="joystick-thumb"></div></div>
@@ -128,6 +91,7 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         
+        // Error logging
         window.addEventListener('error', function(e) {
             const el = document.getElementById('error-log');
             el.style.display = 'block';
@@ -143,18 +107,21 @@
         const fpsDisplay = document.getElementById('fps-display');
 
         const collisionMeshes = [];
-        let grassMeshes = []; // Array dinámico
-        let parametricMesh = null; // Referencia a la malla generada
+        let grassMeshes = []; 
+        let parametricMesh = null; 
         
         const tempQuat = new THREE.Quaternion(); 
         const tempWindDir = new THREE.Vector3(); 
         
-        // --- PARÁMETROS GLOBALES HIERBA ---
+        // --- PARÁMETROS FIJOS (ALIEN GOLD) ---
         const grassParams = {
-            count: 3000,
-            width: 0.12,
-            noiseScale: 0.1,
-            areaSize: 25
+            count: 40000,
+            width: 0.17,
+            noiseScale: 0.4,
+            areaSize: 25,
+            color: '#ffcc00', 
+            metalness: 0.95, 
+            roughness: 0.1
         };
 
         const windParams = { strength: 1.1, speed: 3.0 };
@@ -231,10 +198,7 @@
 
         // --- INIT THREE ---
         const scene = new THREE.Scene();
-        
-        // Niebla (Atardecer)
-        const fogColor = 0xeecfa1; 
-        const fogDensity = 0.022;
+        const fogColor = 0xeecfa1; const fogDensity = 0.022;
         scene.fog = new THREE.FogExp2(fogColor, fogDensity);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
@@ -268,8 +232,8 @@
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.set(2048, 2048); 
         sunLight.shadow.radius = 2; 
-        sunLight.shadow.bias = -0.001; 
-        sunLight.shadow.normalBias = 0.08; 
+        sunLight.shadow.bias = -0.0005; 
+        sunLight.shadow.normalBias = 0.02;
         const d = 20; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
         scene.add(sunLight); scene.add(sunLight.target); 
@@ -287,32 +251,6 @@
         }
         updateSun(); 
 
-        // --- CONTROLES UI HIERBA ---
-        const uiCount = document.getElementById('input-grass-count');
-        const valCount = document.getElementById('val-grass-count');
-        uiCount.addEventListener('input', (e) => {
-            grassParams.count = parseInt(e.target.value);
-            valCount.innerText = grassParams.count;
-            // Debounce simple o regenerar directo
-            generateParametricGrass();
-        });
-
-        const uiWidth = document.getElementById('input-grass-width');
-        const valWidth = document.getElementById('val-grass-width');
-        uiWidth.addEventListener('input', (e) => {
-            grassParams.width = parseFloat(e.target.value);
-            valWidth.innerText = grassParams.width;
-            generateParametricGrass();
-        });
-
-        const uiNoise = document.getElementById('input-grass-noise');
-        const valNoise = document.getElementById('val-grass-noise');
-        uiNoise.addEventListener('input', (e) => {
-            grassParams.noiseScale = parseFloat(e.target.value);
-            valNoise.innerText = grassParams.noiseScale;
-            generateParametricGrass();
-        });
-
         const sphereGeo = new THREE.SphereGeometry(500, 32, 16); sphereGeo.scale(-1, 1, 1); 
         const sphereMat = new THREE.MeshBasicMaterial({ map: bgTexture, side: THREE.DoubleSide, fog: false, depthWrite: false, toneMapped: false });
         sphereMat.color.setScalar(1.0);
@@ -321,44 +259,34 @@
         scene.add(bgMesh);
         textureLoader.load('./Lightmap_Bake.webp', (t) => { t.flipY = false; t.channel = 1; }); 
 
-        // --- GENERADOR DE HIERBA PARAMÉTRICA ---
+        // GENERADOR HIERBA
         function generateParametricGrass() {
-            // 1. Limpiar hierba paramétrica anterior
             if (parametricMesh) {
                 scene.remove(parametricMesh);
-                // Eliminar de la lista de animación
                 const idx = grassMeshes.indexOf(parametricMesh);
                 if (idx > -1) grassMeshes.splice(idx, 1);
-                
                 parametricMesh.geometry.dispose();
                 parametricMesh.material.dispose();
                 parametricMesh = null;
             }
 
-            const count = grassParams.count;
-            const areaSize = grassParams.areaSize;
-            const w = grassParams.width;
-            const h = 0.8;
-            const nScale = grassParams.noiseScale;
-
+            const count = grassParams.count; const areaSize = grassParams.areaSize;
+            const w = grassParams.width; const h = 0.8; const nScale = grassParams.noiseScale;
             const positions = []; const colors = []; const indices = [];
-            const color1 = new THREE.Color(0x3a5f0b); const color2 = new THREE.Color(0x7a9f2b); const tempColor = new THREE.Color();
+            
+            const mainColor = new THREE.Color(grassParams.color); const hsl = {}; mainColor.getHSL(hsl);
+            const color1 = new THREE.Color().setHSL(hsl.h, hsl.s, Math.max(0, hsl.l - 0.15));
+            const color2 = new THREE.Color().setHSL(hsl.h, hsl.s, Math.min(1, hsl.l + 0.1));
+            const tempColor = new THREE.Color();
 
             for (let i = 0; i < count; i++) {
-                let x = (Math.random() - 0.5) * areaSize * 2; 
-                let z = (Math.random() - 0.5) * areaSize * 2;
-                
-                // Ruido ajustado con slider
+                let x = (Math.random() - 0.5) * areaSize * 2; let z = (Math.random() - 0.5) * areaSize * 2;
                 const noise = Math.sin(x * nScale) * Math.sin(z * nScale) + Math.sin(x * (nScale * 3) + z * (nScale * 2)) * 0.5;
                 if (noise < -0.2) continue; 
-                
                 const y = getEnvironmentHeight(new THREE.Vector3(x, 5, z));
                 if (y < -100) continue; 
 
-                const scaleY = 0.6 + Math.random() * 0.8; 
-                const rotation = Math.random() * Math.PI * 2; 
-                const finalH = h * scaleY;
-                
+                const scaleY = 0.6 + Math.random() * 0.8; const rotation = Math.random() * Math.PI * 2; const finalH = h * scaleY;
                 tempColor.lerpColors(color1, color2, Math.random());
                 const cosR = Math.cos(rotation); const sinR = Math.sin(rotation);
                 const transform = (lx, ly) => { return [x + lx * cosR, y + ly, z + lx * sinR]; };
@@ -369,11 +297,11 @@
                 positions.push(...transform(-w/2 * 0.5, finalH * 0.66)); positions.push(...transform(w/2 * 0.5, finalH * 0.66));
                 positions.push(...transform(0, finalH));
 
-                const baseC = tempColor.clone().multiplyScalar(0.7); 
+                const baseC = tempColor.clone().multiplyScalar(0.6); 
                 colors.push(baseC.r, baseC.g, baseC.b); colors.push(baseC.r, baseC.g, baseC.b);
                 colors.push(tempColor.r, tempColor.g, tempColor.b); colors.push(tempColor.r, tempColor.g, tempColor.b);
                 colors.push(tempColor.r, tempColor.g, tempColor.b); colors.push(tempColor.r, tempColor.g, tempColor.b);
-                const tipC = tempColor.clone().multiplyScalar(1.2); 
+                const tipC = tempColor.clone().multiplyScalar(1.3); 
                 colors.push(tipC.r, tipC.g, tipC.b);
 
                 indices.push(vOffset, vOffset+1, vOffset+2); indices.push(vOffset+1, vOffset+3, vOffset+2);
@@ -387,26 +315,26 @@
             geometry.setIndex(indices);
             geometry.computeVertexNormals();
             
-            // IMPORTANTE: Guardar posiciones originales para el viento
             geometry.userData.originalPositions = geometry.attributes.position.array.slice();
             
-            const material = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.8, metalness: 0.1 });
+            const material = new THREE.MeshStandardMaterial({ 
+                vertexColors: true, 
+                side: THREE.DoubleSide, 
+                roughness: grassParams.roughness, 
+                metalness: grassParams.metalness 
+            });
             parametricMesh = new THREE.Mesh(geometry, material);
             parametricMesh.castShadow = true; 
             parametricMesh.receiveShadow = true;
             
-            // Añadir al sistema
             scene.add(parametricMesh);
             grassMeshes.push(parametricMesh);
         }
 
-        // --- ASSETS ---
         const gltfLoader = new GLTFLoader();
-
         gltfLoader.load('./MN_SCENE_01.gltf', function (gltf) {
             const masterModule = gltf.scene;
-            const bbox = new THREE.Box3().setFromObject(masterModule); const size = new THREE.Vector3(); bbox.getSize(size);
-            
+            const size = new THREE.Vector3(); new THREE.Box3().setFromObject(masterModule).getSize(size);
             for (let x = -1; x <= 1; x++) {
                 for (let z = -1; z <= 1; z++) {
                     let moduleInstance = masterModule.clone(); moduleInstance.position.set(x * size.x, 0, z * size.z); scene.add(moduleInstance); 
@@ -429,7 +357,6 @@
                     });
                 }
             }
-            // Iniciar hierba paramétrica
             setTimeout(() => { generateParametricGrass(); }, 500); 
         });
 
@@ -508,27 +435,18 @@
                 if(!ops) continue;
 
                 const pos = mesh.geometry.attributes.position.array;
-                
-                // Si es hierba GLTF, tiene worldOffset. Si es paramétrica, su offset es 0 (está integrada en world)
                 const wX = mesh.userData.worldOffset ? mesh.userData.worldOffset.x : mesh.position.x;
                 
-                // CALCULAR DIRECCIÓN LOCAL DEL VIENTO
-                mesh.getWorldQuaternion(tempQuat);
-                const inverseRot = tempQuat.invert();
+                mesh.getWorldQuaternion(tempQuat); const inverseRot = tempQuat.invert();
                 tempWindDir.copy(globalDir).applyQuaternion(inverseRot).normalize();
                 
-                const windX = tempWindDir.x; 
-                const windZ = tempWindDir.z;
+                const windX = tempWindDir.x; const windZ = tempWindDir.z;
 
                 for (let j = 0; j < ops.length; j += 3) {
-                    const oy = ops[j+1]; 
-                    if (oy <= 0.1) continue; 
-
+                    const oy = ops[j+1]; if (oy <= 0.1) continue; 
                     const vGlobalX = ops[j] + wX;
                     const wave = (Math.sin(vGlobalX * 0.2 - elapsed * 3.0) + Math.cos(vGlobalX * 0.1 - elapsed * 2.1)) * 0.5;
                     const theta = wave * 0.5 * Math.pow(oy, 1.2); 
-
-                    // Usar vector de viento local calculado
                     pos[j]   = ops[j]   + windX * Math.sin(theta) * oy;
                     pos[j+1] = ops[j+1] * Math.cos(theta); 
                     pos[j+2] = ops[j+2] + windZ * Math.sin(theta) * oy;
