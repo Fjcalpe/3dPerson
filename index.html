@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Hierba Mecánica Shiny</title>
+    <title>Juego 3D - Bloom HQ & AA</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -20,21 +20,24 @@
 
         #debug-panel {
             position: absolute; top: 10px; left: 10px;
-            background: rgba(0, 0, 0, 0.6); color: white;
+            background: rgba(0, 0, 0, 0.7); color: white;
             padding: 15px; border-radius: 8px;
-            z-index: 200; width: 220px;
-            max-height: 80vh; overflow-y: auto; 
-            backdrop-filter: blur(4px);
-            border: 1px solid rgba(255,255,255,0.2);
+            z-index: 200; width: 240px;
+            max-height: 90vh; overflow-y: auto; 
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(255,255,255,0.15);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
-        .panel-section { margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
-        .panel-section:last-child { border-bottom: none; }
-        .section-title { font-size: 10px; text-transform: uppercase; color: #aaa; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold;}
+        .panel-section { margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+        .panel-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .section-title { font-size: 11px; text-transform: uppercase; color: #ffeb3b; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold;}
         
-        .control-group { margin-bottom: 8px; }
-        .control-group label { display: block; font-size: 12px; margin-bottom: 2px; color: #ccc; }
-        .control-group input { width: 100%; cursor: pointer; }
-        .value-display { float: right; color: #00ff00; font-weight: bold; }
+        .control-group { margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;}
+        .control-group.slider-group { display: block; }
+        .control-group label { font-size: 12px; color: #ccc; }
+        .control-group input[type=range] { width: 100%; cursor: pointer; accent-color: #ffeb3b; display: block; margin-top: 4px;}
+        .control-group input[type=checkbox] { cursor: pointer; accent-color: #ffeb3b; transform: scale(1.2); }
+        .value-display { float: right; color: #ffeb3b; font-weight: bold; font-size: 12px; }
 
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
@@ -74,37 +77,42 @@
             position: absolute; bottom: 10px; width: 100%; text-align: center;
             color: rgba(255, 255, 255, 0.3); font-size: 12px; pointer-events: none;
         }
+        
+        #error-log {
+            position: absolute; top: 0; left: 0; background: red; color: white; padding: 5px; font-size: 10px; display: none; z-index: 9999;
+        }
     </style>
 </head>
 <body>
     <div id="fps-display">FPS: 0</div>
+    <div id="error-log"></div>
     
     <div id="debug-panel">
         <div class="panel-section">
-            <div class="section-title">Viento</div>
+            <div class="section-title">Calidad Gráfica</div>
             <div class="control-group">
-                <label>Fuerza <span id="val-strength" class="value-display">1.1</span></label>
-                <input type="range" id="input-strength" min="0" max="3.0" step="0.1" value="1.1">
+                <label>ACTIVAR BLOOM</label>
+                <input type="checkbox" id="input-bloom-toggle" checked>
             </div>
             <div class="control-group">
-                <label>Velocidad <span id="val-speed" class="value-display">3.0</span></label>
-                <input type="range" id="input-speed" min="0" max="15.0" step="0.5" value="3.0">
+                <label>ANTIALIAS (FXAA)</label>
+                <input type="checkbox" id="input-aa-toggle" checked>
             </div>
         </div>
-        
+
         <div class="panel-section">
-            <div class="section-title">Iluminación</div>
-            <div class="control-group">
-                <label>Sol <span id="val-sun" class="value-display">3.0</span></label>
-                <input type="range" id="input-sun" min="0" max="10.0" step="0.1" value="3.0">
+            <div class="section-title">Ajustes Bloom</div>
+            <div class="control-group slider-group">
+                <label>Intensidad <span id="val-bloom-str" class="value-display">0.4</span></label>
+                <input type="range" id="input-bloom-str" min="0" max="3.0" step="0.1" value="0.4">
             </div>
-            <div class="control-group">
-                <label>Ambiente <span id="val-amb" class="value-display">0.4</span></label>
-                <input type="range" id="input-amb" min="0" max="2.0" step="0.05" value="0.4">
+            <div class="control-group slider-group">
+                <label>Radio <span id="val-bloom-rad" class="value-display">0.5</span></label>
+                <input type="range" id="input-bloom-rad" min="0" max="2.0" step="0.1" value="0.5">
             </div>
-            <div class="control-group">
-                <label>Reflejos <span id="val-env" class="value-display">0.8</span></label>
-                <input type="range" id="input-env" min="0" max="2.0" step="0.05" value="0.8">
+            <div class="control-group slider-group">
+                <label>Umbral (Threshold) <span id="val-bloom-thr" class="value-display">0.85</span></label>
+                <input type="range" id="input-bloom-thr" min="0" max="1.0" step="0.05" value="0.85">
             </div>
         </div>
     </div>
@@ -121,8 +129,8 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://esm.sh/three@0.168.0",
+                "three/addons/": "https://esm.sh/three@0.168.0/examples/jsm/"
             }
         }
     </script>
@@ -131,8 +139,23 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         
+        // --- IMPORTS POST-PROCESADO ---
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+
+        // Error catcher
+        window.addEventListener('error', function(e) {
+            const el = document.getElementById('error-log');
+            el.style.display = 'block';
+            el.innerHTML += "Error: " + e.message + "<br>";
+        });
+
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
-        let blobShadow;
+        let blobShadow, composer, bloomPass, fxaaPass;
         const clock = new THREE.Clock();
         
         // FPS
@@ -141,54 +164,12 @@
         const fpsDisplay = document.getElementById('fps-display');
 
         const collisionMeshes = [];
-        
-        // --- SISTEMA DE VIENTO ---
         const grassMeshes = []; 
         const tempQuat = new THREE.Quaternion(); 
         const tempWindDir = new THREE.Vector3(); 
         const windParams = { strength: 1.1, speed: 3.0 };
 
-        // --- INTERFAZ USUARIO (LISTENERS) ---
-        
-        const uiStrength = document.getElementById('input-strength');
-        const valStrength = document.getElementById('val-strength');
-        uiStrength.addEventListener('input', (e) => { 
-            windParams.strength = parseFloat(e.target.value); 
-            valStrength.innerText = windParams.strength.toFixed(1);
-        });
-
-        const uiSpeed = document.getElementById('input-speed');
-        const valSpeed = document.getElementById('val-speed');
-        uiSpeed.addEventListener('input', (e) => { 
-            windParams.speed = parseFloat(e.target.value);
-            valSpeed.innerText = windParams.speed.toFixed(1);
-        });
-
-        const uiSun = document.getElementById('input-sun');
-        const valSun = document.getElementById('val-sun');
-        uiSun.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            valSun.innerText = val.toFixed(1);
-            if(sunLight) sunLight.intensity = val;
-        });
-
-        const uiAmb = document.getElementById('input-amb');
-        const valAmb = document.getElementById('val-amb');
-        uiAmb.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            valAmb.innerText = val.toFixed(2);
-            if(hemiLight) hemiLight.intensity = val;
-        });
-
-        const uiEnv = document.getElementById('input-env');
-        const valEnv = document.getElementById('val-env');
-        uiEnv.addEventListener('input', (e) => {
-            const val = parseFloat(e.target.value);
-            valEnv.innerText = val.toFixed(2);
-            scene.environmentIntensity = val;
-        });
-
-        // --- FÍSICAS Y JUEGO ---
+        // --- FÍSICAS ---
         const maxMoveSpeed = 11.0; 
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
@@ -204,8 +185,15 @@
         const projectiles = [];
         const projectileSpeed = 20.0;
         
+        // --- PARÁMETROS FIJOS ---
+        const FIXED_SETTINGS = { 
+            bgRot: 123, iblRot: 334, sunRot: 270, 
+            sunInt: 6.0, ambInt: 0.0, iblInt: 2.0,
+            exposure: 0.5, skyBright: 1.0, color: 0xffeeb1 
+        };
+        const sunDistance = 50; 
         let sunOffset = new THREE.Vector3(); 
-        const FIXED_SETTINGS = { vert: 35, horiz: 215, intensity: 3.0, amb: 0.4, color: 0xffeeb1 };
+
         const keyStates = { w: false, a: false, s: false, d: false };
         const camSettings = { radius: 4.5, minRadius: 1.5, currentRadius: 4.5, theta: Math.PI, phi: 0.45 };
         const cameraRaycaster = new THREE.Raycaster();
@@ -218,6 +206,7 @@
         const maxRadius = joystickContainer.clientWidth / 2;
         let isDraggingJoystick = false;
 
+        // --- INPUTS ---
         const handleJoystick = (e) => {
             if(e.type.startsWith('touch')) e.preventDefault();
             if (!isDraggingJoystick) return;
@@ -229,19 +218,11 @@
             let x = clientX - centerX;
             let y = clientY - centerY;
             let distance = Math.sqrt(x*x + y*y);
-            if (distance > maxRadius) {
-                x = (x / distance) * maxRadius;
-                y = (y / distance) * maxRadius;
-            }
+            if (distance > maxRadius) { x = (x / distance) * maxRadius; y = (y / distance) * maxRadius; }
             joystickThumb.style.transform = `translate(${x}px, ${y}px)`;
-            joystickVector.x = x / maxRadius;
-            joystickVector.y = y / maxRadius; 
+            joystickVector.x = x / maxRadius; joystickVector.y = y / maxRadius; 
         };
-        const resetJoystick = () => {
-            isDraggingJoystick = false;
-            joystickVector = { x: 0, y: 0 };
-            joystickThumb.style.transform = `translate(0px, 0px)`;
-        };
+        const resetJoystick = () => { isDraggingJoystick = false; joystickVector = { x: 0, y: 0 }; joystickThumb.style.transform = `translate(0px, 0px)`; };
         joystickContainer.addEventListener('mousedown', (e) => { isDraggingJoystick = true; handleJoystick(e); });
         window.addEventListener('mousemove', (e) => { if(isDraggingJoystick) handleJoystick(e); });
         window.addEventListener('mouseup', resetJoystick);
@@ -249,164 +230,141 @@
         joystickContainer.addEventListener('touchmove', handleJoystick);
         joystickContainer.addEventListener('touchend', resetJoystick);
 
-        document.addEventListener('pointerdown', (e) => {
-            if (e.target.closest('.ui-element') || e.target.closest('#debug-panel')) return;
-            isDraggingCamera = true;
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        });
-        document.addEventListener('pointermove', (e) => {
-            if (!isDraggingCamera) return;
-            const deltaX = e.clientX - previousMousePosition.x;
-            const deltaY = e.clientY - previousMousePosition.y;
-            camSettings.theta -= deltaX * 0.008; 
-            camSettings.phi -= deltaY * 0.008;
-            camSettings.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camSettings.phi));
-            previousMousePosition = { x: e.clientX, y: e.clientY };
-        });
+        document.addEventListener('pointerdown', (e) => { if (e.target.closest('.ui-element') || e.target.closest('#debug-panel')) return; isDraggingCamera = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
+        document.addEventListener('pointermove', (e) => { if (!isDraggingCamera) return; const deltaX = e.clientX - previousMousePosition.x; const deltaY = e.clientY - previousMousePosition.y; camSettings.theta -= deltaX * 0.008; camSettings.phi -= deltaY * 0.008; camSettings.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camSettings.phi)); previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointerup', () => isDraggingCamera = false);
         document.addEventListener('pointercancel', () => isDraggingCamera = false);
-
-        document.addEventListener('keydown', (e) => {
-            if(e.code==='KeyW') keyStates.w = true;
-            if(e.code==='KeyS') keyStates.s = true;
-            if(e.code==='KeyA') keyStates.a = true;
-            if(e.code==='KeyD') keyStates.d = true;
-            if(e.code==='Space') jump();
-            if(e.code==='KeyP') shoot();
-        });
-        document.addEventListener('keyup', (e) => {
-            if(e.code==='KeyW') keyStates.w = false;
-            if(e.code==='KeyS') keyStates.s = false;
-            if(e.code==='KeyA') keyStates.a = false;
-            if(e.code==='KeyD') keyStates.d = false;
-        });
-
-        const jumpBtn = document.getElementById('btn-jump');
-        const shootBtn = document.getElementById('btn-shoot');
+        document.addEventListener('keydown', (e) => { if(e.code==='KeyW') keyStates.w = true; if(e.code==='KeyS') keyStates.s = true; if(e.code==='KeyA') keyStates.a = true; if(e.code==='KeyD') keyStates.d = true; if(e.code==='Space') jump(); if(e.code==='KeyP') shoot(); });
+        document.addEventListener('keyup', (e) => { if(e.code==='KeyW') keyStates.w = false; if(e.code==='KeyS') keyStates.s = false; if(e.code==='KeyA') keyStates.a = false; if(e.code==='KeyD') keyStates.d = false; });
+        const jumpBtn = document.getElementById('btn-jump'); const shootBtn = document.getElementById('btn-shoot');
         const triggerAction = (action) => (e) => { e.preventDefault(); action(); };
-        jumpBtn.addEventListener('touchstart', triggerAction(jump));
-        jumpBtn.addEventListener('mousedown', triggerAction(jump));
-        shootBtn.addEventListener('touchstart', triggerAction(shoot));
-        shootBtn.addEventListener('mousedown', triggerAction(shoot));
+        jumpBtn.addEventListener('touchstart', triggerAction(jump)); jumpBtn.addEventListener('mousedown', triggerAction(jump));
+        shootBtn.addEventListener('touchstart', triggerAction(shoot)); shootBtn.addEventListener('mousedown', triggerAction(shoot));
 
+        // --- INIT THREE ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
         
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2)); 
+        renderer.setPixelRatio(window.devicePixelRatio); // Usar ratio nativo para máxima nitidez
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
-        renderer.toneMappingExposure = 1.0;
+        renderer.toneMappingExposure = FIXED_SETTINGS.exposure; 
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
         document.body.appendChild(renderer.domElement);
 
+        // --- COMPOSER CONFIGURATION (BLOOM + FXAA) ---
+        try {
+            const renderScene = new RenderPass(scene, camera);
+            
+            // 1. CONFIGURACIÓN ALTA RESOLUCIÓN BLOOM
+            // Usamos la resolución real del dispositivo para evitar cuadros
+            const pixelRatio = renderer.getPixelRatio();
+            const width = window.innerWidth * pixelRatio;
+            const height = window.innerHeight * pixelRatio;
+            const bloomRes = new THREE.Vector2(width, height);
+            
+            bloomPass = new UnrealBloomPass(bloomRes, 1.5, 0.4, 0.85);
+            bloomPass.strength = 0.4;
+            bloomPass.radius = 0.5;
+            bloomPass.threshold = 0.85;
+
+            // 2. OUTPUT PASS (Tone Mapping & Color Correction)
+            const outputPass = new OutputPass();
+
+            // 3. FXAA PASS (Antialias)
+            fxaaPass = new ShaderPass(FXAAShader);
+            fxaaPass.uniforms['resolution'].value.set(1 / (window.innerWidth * pixelRatio), 1 / (window.innerHeight * pixelRatio));
+
+            composer = new EffectComposer(renderer);
+            composer.setPixelRatio(pixelRatio); // Importante para EffectComposer
+            composer.setSize(window.innerWidth, window.innerHeight);
+            
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+            composer.addPass(outputPass);
+            composer.addPass(fxaaPass);
+            
+        } catch (err) {
+            console.error("Composer Init Error", err);
+        }
+
+        // --- ENVIRONMENT ---
         const textureLoader = new THREE.TextureLoader();
-        const bgTexture = textureLoader.load('./bg.webp', (texture) => {
+        const bgTexture = textureLoader.load('./bg.webp', (texture) => { texture.colorSpace = THREE.SRGBColorSpace; });
+        const iblTexture = textureLoader.load('./bg_reflejosIBL.webp', (texture) => {
             texture.mapping = THREE.EquirectangularReflectionMapping;
             texture.colorSpace = THREE.SRGBColorSpace;
             scene.environment = texture; 
-            scene.environmentIntensity = 0.8; 
+            scene.environmentIntensity = FIXED_SETTINGS.iblInt; 
+            if(scene.environmentRotation) scene.environmentRotation.y = THREE.MathUtils.degToRad(FIXED_SETTINGS.iblRot);
         });
 
-        function createShadowTexture() {
-            const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
-            const ctx = canvas.getContext('2d');
-            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-            gradient.addColorStop(0, 'rgba(0,0,0,0.6)'); gradient.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = gradient; ctx.fillRect(0, 0, 64, 64);
-            return new THREE.CanvasTexture(canvas);
-        }
-        const shadowMat = new THREE.MeshBasicMaterial({ 
-            map: createShadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 
-        });
+        const shadowMat = new THREE.MeshBasicMaterial({ map: createShadowTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
         blobShadow = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), shadowMat);
         blobShadow.rotation.x = -Math.PI / 2; blobShadow.visible = false;
         scene.add(blobShadow);
+        function createShadowTexture() { const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64; const ctx = canvas.getContext('2d'); const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32); gradient.addColorStop(0, 'rgba(0,0,0,0.6)'); gradient.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gradient; ctx.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(canvas); }
 
-        const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.intensity); 
+        // --- LIGHTS ---
+        const sunLight = new THREE.DirectionalLight(FIXED_SETTINGS.color, FIXED_SETTINGS.sunInt);
         sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(1024, 1024); 
-        sunLight.shadow.radius = 3; 
-        const d = 20; 
-        sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.mapSize.set(1024, 1024); sunLight.shadow.radius = 3; 
+        const d = 20; sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
         sunLight.shadow.camera.near = 0.5; sunLight.shadow.camera.far = 150; 
-        sunLight.shadow.bias = -0.001; sunLight.shadow.normalBias = 0.05; 
+        
+        const phiSun = THREE.MathUtils.degToRad(90 - 35); 
+        const thetaSun = THREE.MathUtils.degToRad(FIXED_SETTINGS.sunRot); 
+        sunOffset.set(sunDistance * Math.sin(phiSun) * Math.sin(thetaSun), sunDistance * Math.cos(phiSun), sunDistance * Math.sin(phiSun) * Math.cos(thetaSun));
         scene.add(sunLight); scene.add(sunLight.target); 
         
-        const hemiLight = new THREE.HemisphereLight(FIXED_SETTINGS.color, 0x000000, FIXED_SETTINGS.amb);
+        const hemiLight = new THREE.HemisphereLight(0xffd580, 0x222233, FIXED_SETTINGS.ambInt);
         scene.add(hemiLight);
 
-        const sunDistance = 50;
-        const phiSun = THREE.MathUtils.degToRad(90 - FIXED_SETTINGS.vert); 
-        const thetaSun = THREE.MathUtils.degToRad(FIXED_SETTINGS.horiz);   
-        sunOffset.set(sunDistance * Math.sin(phiSun) * Math.sin(thetaSun), sunDistance * Math.cos(phiSun), sunDistance * Math.sin(phiSun) * Math.cos(thetaSun));
-
-        const gltfLoader = new GLTFLoader();
-        
-        const sphereGeo = new THREE.SphereGeometry(500, 32, 16); 
-        sphereGeo.scale(-1, 1, 1); 
+        const sphereGeo = new THREE.SphereGeometry(500, 32, 16); sphereGeo.scale(-1, 1, 1); 
         const sphereMat = new THREE.MeshBasicMaterial({ map: bgTexture, side: THREE.DoubleSide, fog: false, depthWrite: false, toneMapped: false });
+        sphereMat.color.setScalar(FIXED_SETTINGS.skyBright);
         bgMesh = new THREE.Mesh(sphereGeo, sphereMat);
-        bgMesh.rotation.y = THREE.MathUtils.degToRad(58);
+        bgMesh.rotation.y = THREE.MathUtils.degToRad(FIXED_SETTINGS.bgRot);
         scene.add(bgMesh);
 
-        const lightmapTexture = textureLoader.load('./Lightmap_Bake.webp');
-        lightmapTexture.flipY = false; lightmapTexture.channel = 1; 
+        textureLoader.load('./Lightmap_Bake.webp', (t) => { t.flipY = false; t.channel = 1; }); 
+
+        // --- CONTROLES UI ACTUALIZADOS ---
+        document.getElementById('input-bloom-toggle').addEventListener('change', (e) => { 
+            if(bloomPass) bloomPass.enabled = e.target.checked; 
+        });
         
+        document.getElementById('input-aa-toggle').addEventListener('change', (e) => { 
+            if(fxaaPass) fxaaPass.enabled = e.target.checked; 
+        });
+
+        document.getElementById('input-bloom-str').addEventListener('input', (e) => { const val = parseFloat(e.target.value); document.getElementById('val-bloom-str').innerText = val.toFixed(1); if(bloomPass) bloomPass.strength = val; });
+        document.getElementById('input-bloom-rad').addEventListener('input', (e) => { const val = parseFloat(e.target.value); document.getElementById('val-bloom-rad').innerText = val.toFixed(1); if(bloomPass) bloomPass.radius = val; });
+        document.getElementById('input-bloom-thr').addEventListener('input', (e) => { const val = parseFloat(e.target.value); document.getElementById('val-bloom-thr').innerText = val.toFixed(2); if(bloomPass) bloomPass.threshold = val; });
+
+        // --- ASSETS ---
+        const gltfLoader = new GLTFLoader();
+
         gltfLoader.load('./MN_SCENE_01.gltf', function (gltf) {
             const masterModule = gltf.scene;
-            const totalBox = new THREE.Box3().setFromObject(masterModule);
-            const size = new THREE.Vector3();
-            totalBox.getSize(size);
-            
-            const spacingX = size.x; 
-            const spacingZ = size.z;
-
+            const size = new THREE.Vector3(); new THREE.Box3().setFromObject(masterModule).getSize(size);
             for (let x = -1; x <= 1; x++) {
                 for (let z = -1; z <= 1; z++) {
-                    let moduleInstance = masterModule.clone(); 
-                    moduleInstance.position.x = x * spacingX; 
-                    moduleInstance.position.z = z * spacingZ;
-                    scene.add(moduleInstance); 
-
+                    let moduleInstance = masterModule.clone(); moduleInstance.position.set(x * size.x, 0, z * size.z); scene.add(moduleInstance); 
                     moduleInstance.traverse((child) => {
                         if (child.isMesh) {
-                            child.castShadow = true; 
-                            child.receiveShadow = true; 
-                            if (child.material) child.material.side = THREE.DoubleSide;
-
+                            child.castShadow = true; child.receiveShadow = true; if (child.material) child.material.side = THREE.DoubleSide;
                             const name = child.name.toLowerCase();
-                            const parentName = child.parent ? child.parent.name.toLowerCase() : "";
-                            
-                            const isHierba = (name.includes("hierba") || parentName.includes("hierba"));
-                            const isMontes = (name.includes("montes") || parentName.includes("montes"));
-
-                            // --- SETUP VIENTO Y MATERIAL MECÁNICO ---
-                            if (isHierba && !isMontes) {
+                            if ((name.includes("hierba") || (child.parent && child.parent.name.toLowerCase().includes("hierba"))) && !name.includes("montes")) {
                                 child.geometry = child.geometry.clone();
-                                const posAttribute = child.geometry.attributes.position;
-                                child.userData.originalPositions = posAttribute.array.slice(); 
-                                child.userData.worldOffset = new THREE.Vector2(
-                                    x * spacingX + child.position.x,
-                                    z * spacingZ + child.position.z
-                                );
+                                child.userData.originalPositions = child.geometry.attributes.position.array.slice(); 
+                                child.userData.worldOffset = new THREE.Vector2(x * size.x + child.position.x, z * size.z + child.position.z);
                                 grassMeshes.push(child);
-                                
-                                // MATERIAL: HIERBA MECÁNICA (METAL PURO)
-                                if(child.material) {
-                                    child.material.metalness = 1.0; // Metal total
-                                    child.material.roughness = 0.3; // Brillante pero no espejo perfecto
-                                }
-                            }
-                            else if (name.includes("colision") || name.includes("collision")) {
-                                child.visible = false;
-                                collisionMeshes.push(child);
-                            }
-                            else if (name.includes("suelo")) {
-                                collisionMeshes.push(child);
-                            }
+                            } else if (name.includes("colision") || name.includes("collision")) { child.visible = false; collisionMeshes.push(child); }
+                            else if (name.includes("suelo")) { collisionMeshes.push(child); }
                         }
                     });
                 }
@@ -414,255 +372,116 @@
         });
 
         gltfLoader.load('./GIRLrun.gltf', function (gltf) {
-            rawCharacterMesh = gltf.scene;
-            rawCharacterMesh.scale.set(0.7, 0.7, 0.7);
-            rawCharacterMesh.updateMatrixWorld(true); 
-            playerContainer = new THREE.Group();
-            scene.add(playerContainer);
-            playerContainer.position.set(0, 3, 0); 
-            
-            const box = new THREE.Box3().setFromObject(rawCharacterMesh);
-            const center = box.getCenter(new THREE.Vector3());
-            rawCharacterMesh.position.set(-center.x, -box.min.y, -center.z);
-            playerContainer.add(rawCharacterMesh);
-            
-            rawCharacterMesh.traverse((child) => { 
-                if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; if(child.material) child.material.roughness = 0.8; }
-            });
-            
-            if (gltf.animations && gltf.animations.length > 0) {
-                mixer = new THREE.AnimationMixer(rawCharacterMesh);
-                const action = mixer.clipAction(gltf.animations[0]);
-                action.play();
-                mixer.timeScale = 0; 
-            }
+            rawCharacterMesh = gltf.scene; rawCharacterMesh.scale.set(0.7, 0.7, 0.7); rawCharacterMesh.updateMatrixWorld(true); 
+            playerContainer = new THREE.Group(); scene.add(playerContainer); playerContainer.position.set(0, 3, 0); 
+            const box = new THREE.Box3().setFromObject(rawCharacterMesh); const center = box.getCenter(new THREE.Vector3());
+            rawCharacterMesh.position.set(-center.x, -box.min.y, -center.z); playerContainer.add(rawCharacterMesh);
+            rawCharacterMesh.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; if(child.material) child.material.roughness = 0.8; } });
+            if (gltf.animations && gltf.animations.length > 0) { mixer = new THREE.AnimationMixer(rawCharacterMesh); mixer.clipAction(gltf.animations[0]).play(); mixer.timeScale = 0; }
         });
 
+        // --- GAME LOGIC ---
         function jump() { if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } }
-
-        const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8);
-        const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        
-        function shoot() {
-            if (!playerContainer) return;
-            const proj = new THREE.Mesh(projectileGeo, projectileMat);
-            proj.position.copy(playerContainer.position);
-            proj.position.y += 1.2; 
-            const direction = new THREE.Vector3();
-            playerContainer.getWorldDirection(direction); 
-            proj.quaternion.copy(playerContainer.quaternion);
-            proj.userData.velocity = direction.multiplyScalar(projectileSpeed);
-            proj.userData.lifeTime = 2.0; 
-            scene.add(proj);
-            projectiles.push(proj);
+        const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        function shoot() { if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(projectileSpeed); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
+        function getEnvironmentHeight(pos) {
+            const origin = pos.clone(); origin.y += 1.0; 
+            const offsets = [new THREE.Vector3(0,0,0), new THREE.Vector3(0.35,0,0), new THREE.Vector3(-0.35,0,0), new THREE.Vector3(0,0,0.35), new THREE.Vector3(0,0,-0.35)];
+            let maxH = -999; let found = false;
+            for(let o of offsets) { raycaster.set(origin.clone().add(o), downVector); raycaster.far = 10.0; const hits = raycaster.intersectObjects(collisionMeshes, true); if(hits.length > 0) { const y = hits[0].point.y; if(y > maxH) { maxH = y; found = true; }}}
+            return found ? maxH : -999;
         }
-
-        function getEnvironmentHeight(position) {
-            const origin = position.clone(); origin.y += 1.0; 
-            const footRadius = 0.35; 
-            const offsets = [ new THREE.Vector3(0,0,0), new THREE.Vector3(footRadius,0,0), new THREE.Vector3(-footRadius,0,0), new THREE.Vector3(0,0,footRadius), new THREE.Vector3(0,0,-footRadius) ];
-            let maxHeight = -999; let hitFound = false;
-            for(let i=0; i<offsets.length; i++) {
-                const rayOrigin = origin.clone().add(offsets[i]);
-                raycaster.set(rayOrigin, downVector); raycaster.far = 10.0; 
-                const intersects = raycaster.intersectObjects(collisionMeshes, true);
-                if (intersects.length > 0) {
-                    const hitY = intersects[0].point.y;
-                    if (hitY > maxHeight) { maxHeight = hitY; hitFound = true; }
-                }
-            }
-            return hitFound ? maxHeight : -999;
-        }
-
-        function checkWall(position, direction) {
-            const origin = position.clone(); origin.y += 0.8; 
-            raycaster.set(origin, direction); raycaster.far = 0.6; 
-            const intersects = raycaster.intersectObjects(collisionMeshes, true);
-            return intersects.length > 0;
-        }
+        function checkWall(pos, dir) { raycaster.set(pos.clone().add(new THREE.Vector3(0,0.8,0)), dir); raycaster.far = 0.6; return raycaster.intersectObjects(collisionMeshes, true).length > 0; }
 
         function updatePhysics(dt) {
             if (!playerContainer) return;
             if (landingCooldown > 0) { landingCooldown -= dt; currentSpeed = 0; }
-
-            let inputX = joystickVector.x;
-            let inputY = joystickVector.y;
-            if (keyStates.w) inputY -= 1; if (keyStates.s) inputY += 1;
-            if (keyStates.a) inputX -= 1; if (keyStates.d) inputX += 1;
-
-            moveDirection.set(inputX, 0, inputY);
-            const length = moveDirection.length();
-            
-            if (length > 0.1 && landingCooldown <= 0) { 
-                isMoving = true;
-                if (length > 1) { moveDirection.normalize(); currentSpeed = maxMoveSpeed; } 
-                else { currentSpeed = maxMoveSpeed * length; }
-            } else {
-                isMoving = false;
-                if (landingCooldown <= 0) currentSpeed = 0;
-            }
-
+            let ix = joystickVector.x; let iy = joystickVector.y;
+            if (keyStates.w) iy -= 1; if (keyStates.s) iy += 1; if (keyStates.a) ix -= 1; if (keyStates.d) ix += 1;
+            moveDirection.set(ix, 0, iy); const len = moveDirection.length();
+            if (len > 0.1 && landingCooldown <= 0) { isMoving = true; currentSpeed = (len > 1 ? maxMoveSpeed : maxMoveSpeed * len); } else { isMoving = false; if (landingCooldown <= 0) currentSpeed = 0; }
             if (isMoving) {
-                const camForward = new THREE.Vector3();
-                camera.getWorldDirection(camForward); camForward.y = 0; camForward.normalize();
-                const camRight = new THREE.Vector3();
-                camRight.crossVectors(new THREE.Vector3(0, 1, 0), camForward).normalize();
-                
-                const finalMove = new THREE.Vector3();
-                finalMove.addScaledVector(camForward, -moveDirection.z);
-                finalMove.addScaledVector(camRight, -moveDirection.x);
-                finalMove.normalize();
-
-                if (!checkWall(playerContainer.position, finalMove)) {
-                    playerContainer.position.addScaledVector(finalMove, currentSpeed * dt);
-                }
-                const targetAngle = Math.atan2(finalMove.x, finalMove.z);
-                const targetQuaternion = new THREE.Quaternion();
-                targetQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
-                playerContainer.quaternion.slerp(targetQuaternion, 10 * dt);
+                const cf = new THREE.Vector3(); camera.getWorldDirection(cf); cf.y = 0; cf.normalize();
+                const cr = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cf).normalize();
+                const move = new THREE.Vector3().addScaledVector(cf, -moveDirection.z).addScaledVector(cr, -moveDirection.x).normalize();
+                if (!checkWall(playerContainer.position, move)) playerContainer.position.addScaledVector(move, currentSpeed * dt);
+                playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(move.x, move.z)), 10 * dt);
             }
-
-            velocityY += gravity * dt;
-            let proposedY = playerContainer.position.y + velocityY * dt;
-            const floorY = getEnvironmentHeight(playerContainer.position);
-            
-            if (blobShadow) {
-                if (floorY > -500) { blobShadow.visible = true; blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); } 
-                else { blobShadow.visible = false; }
-            }
-
-            if (proposedY <= floorY && velocityY <= 0) {
-                if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; 
-                playerContainer.position.y = floorY;
-                velocityY = 0;
-                isGrounded = true;
-            } else if (proposedY <= 0) {
-                if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; 
-                playerContainer.position.y = 0;
-                velocityY = 0;
-                isGrounded = true;
-            } else {
-                playerContainer.position.y = proposedY;
-                isGrounded = false;
-            }
+            velocityY += gravity * dt; const propY = playerContainer.position.y + velocityY * dt; const floorY = getEnvironmentHeight(playerContainer.position);
+            if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
+            if (propY <= floorY && velocityY <= 0) { if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; playerContainer.position.y = floorY; velocityY = 0; isGrounded = true; } 
+            else if (propY <= 0) { if (!isGrounded) landingCooldown = LANDING_PAUSE_DURATION; playerContainer.position.y = 0; velocityY = 0; isGrounded = true; } 
+            else { playerContainer.position.y = propY; isGrounded = false; }
         }
 
         function updateSmartCamera() {
             if (!playerContainer) return;
-
-            const targetCamX = camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta);
-            const targetCamY = camSettings.radius * Math.cos(camSettings.phi);
-            const targetCamZ = camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta);
-            
-            const idealPos = playerContainer.position.clone().add(new THREE.Vector3(targetCamX, targetCamY, targetCamZ));
-            const playerHead = playerContainer.position.clone().add(new THREE.Vector3(0, 1.5, 0));
-            const direction = new THREE.Vector3().subVectors(idealPos, playerHead).normalize();
-            
-            cameraRaycaster.set(playerHead, direction);
-            cameraRaycaster.far = camSettings.radius;
-
+            const ideal = playerContainer.position.clone().add(new THREE.Vector3(camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta), camSettings.radius * Math.cos(camSettings.phi), camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)));
+            const head = playerContainer.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+            const dir = new THREE.Vector3().subVectors(ideal, head).normalize();
+            cameraRaycaster.set(head, dir); cameraRaycaster.far = camSettings.radius;
             const hits = cameraRaycaster.intersectObjects(collisionMeshes, true);
-            
-            let finalDistance = camSettings.radius;
-            if (hits.length > 0) {
-                finalDistance = Math.max(camSettings.minRadius, hits[0].distance - 0.2);
-            }
-
-            const correctedPos = playerHead.clone().add(direction.multiplyScalar(finalDistance));
-            camera.position.lerp(correctedPos, 0.2); 
+            const dist = hits.length > 0 ? Math.max(camSettings.minRadius, hits[0].distance - 0.2) : camSettings.radius;
+            camera.position.lerp(head.clone().add(dir.multiplyScalar(dist)), 0.2);
             camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            const time = performance.now();
-            frames++;
-            if (time >= lastTime + 1000) { fpsDisplay.innerText = "FPS: " + frames; frames = 0; lastTime = time; }
+            const time = performance.now(); frames++; if (time >= lastTime + 1000) { fpsDisplay.innerText = "FPS: " + frames; frames = 0; lastTime = time; }
+            let delta = Math.min(clock.getDelta(), 0.1); const elapsed = clock.getElapsedTime();
 
-            let delta = Math.min(clock.getDelta(), 0.1); 
-            const elapsed = clock.getElapsedTime();
-
-            // --- ANIMACIÓN VIENTO (VARIACIÓN PER-VERTEX CORRECTA SIN ROMPER MESH) ---
-            const waveLengthScale = 0.2;   
             const globalDir = new THREE.Vector3(1, 0, 0); 
-
             for (let i = 0; i < grassMeshes.length; i++) {
-                const mesh = grassMeshes[i];
-                const originalPos = mesh.userData.originalPositions;
-                const currentPos = mesh.geometry.attributes.position.array;
-                
-                const wX = mesh.userData.worldOffset ? mesh.userData.worldOffset.x : mesh.position.x;
-                const wZ = mesh.userData.worldOffset ? mesh.userData.worldOffset.y : mesh.position.z;
-
-                mesh.getWorldQuaternion(tempQuat);
-                const inverseRot = tempQuat.invert();
-                tempWindDir.copy(globalDir).applyQuaternion(inverseRot).normalize();
-                const wx = tempWindDir.x;
-                const wz = tempWindDir.z;
-
-                for (let j = 0; j < originalPos.length; j += 3) {
-                    const ox = originalPos[j];
-                    const oy = originalPos[j+1];
-                    const oz = originalPos[j+2];
-                    
-                    if (oy <= 0.1) continue; 
-                    
-                    const vGlobalX = wX + ox;
-                    const vGlobalZ = wZ + oz;
-
-                    let localNoise = (Math.sin(vGlobalX * 0.5) + Math.cos(vGlobalZ * 0.3)) * 1.5;
-
-                    const spatialPhase = (vGlobalX * waveLengthScale) + (vGlobalZ * waveLengthScale * 0.5);
-                    const waveA = Math.sin(spatialPhase - elapsed * windParams.speed + localNoise);
-                    const waveB = Math.cos(spatialPhase * 0.5 - elapsed * windParams.speed * 0.7); 
-                    
-                    let waveVal = (waveA + waveB + 1.5) * 0.5; 
-                    let bendAngleFactor = waveVal * windParams.strength; 
-
-                    const heightInfluence = Math.pow(oy, 0.75);
-                    const theta = bendAngleFactor * heightInfluence * 0.7; 
-
-                    const deformation = Math.sin(theta) * oy * 1.3; 
-                    const crush = Math.cos(theta); 
-                    const safeCrush = crush * 0.7 + 0.3;
-
-                    currentPos[j]   = ox + wx * deformation;
-                    currentPos[j+1] = oy * safeCrush; 
-                    currentPos[j+2] = oz + wz * deformation;
+                const mesh = grassMeshes[i]; const ops = mesh.userData.originalPositions; const pos = mesh.geometry.attributes.position.array;
+                const wx = mesh.userData.worldOffset ? mesh.userData.worldOffset.x : mesh.position.x;
+                mesh.getWorldQuaternion(tempQuat); const idir = tempWindDir.copy(globalDir).applyQuaternion(tempQuat.invert()).normalize();
+                for (let j = 0; j < ops.length; j += 3) {
+                    const oy = ops[j+1]; if (oy <= 0.1) continue;
+                    const wave = (Math.sin((wx+ops[j])*0.2 - elapsed*3 + (Math.sin((wx+ops[j])*0.5)*1.5)) + Math.cos((wx+ops[j])*0.1 - elapsed*2.1) + 1.5) * 0.5;
+                    const theta = wave * 1.1 * Math.pow(oy, 0.75) * 0.7;
+                    pos[j] = ops[j] + idir.x * Math.sin(theta) * oy * 1.3; pos[j+1] = oy * (Math.cos(theta) * 0.7 + 0.3); pos[j+2] = ops[j+2] + idir.z * Math.sin(theta) * oy * 1.3;
                 }
                 mesh.geometry.attributes.position.needsUpdate = true;
             }
 
-            const timeStep = 1/60; let steps = Math.ceil(delta / timeStep); if(steps > 4) steps = 4; 
-            for(let i=0; i<steps; i++) updatePhysics(delta / steps);
+            const steps = Math.min(4, Math.ceil(delta / (1/60))); for(let i=0; i<steps; i++) updatePhysics(delta/steps);
 
             if (playerContainer) {
-                if (mixer) {
-                    if (isGrounded && isMoving) mixer.timeScale = currentSpeed / maxMoveSpeed;
-                    else mixer.timeScale = 0;
-                    mixer.update(delta);
-                }
+                if (mixer) { mixer.timeScale = (isGrounded && isMoving) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
                 updateSmartCamera();
-                sunLight.target.position.set(0, 0, playerContainer.position.z);
-                sunLight.target.updateMatrixWorld();
-                sunLight.position.copy(sunLight.target.position).add(sunOffset);
+                sunLight.target.position.set(0, 0, playerContainer.position.z); sunLight.target.updateMatrixWorld(); sunLight.position.copy(sunLight.target.position).add(sunOffset);
                 if (bgMesh) bgMesh.position.copy(camera.position);
             }
+            for (let i = projectiles.length - 1; i >= 0; i--) { const p = projectiles[i]; p.position.addScaledVector(p.userData.velocity, delta); p.userData.lifeTime -= delta; if (p.userData.lifeTime <= 0) { scene.remove(p); projectiles.splice(i, 1); }}
 
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                const proj = projectiles[i];
-                proj.position.addScaledVector(proj.userData.velocity, delta);
-                proj.userData.lifeTime -= delta;
-                if (proj.userData.lifeTime <= 0) { scene.remove(proj); projectiles.splice(i, 1); }
+            // RENDERING
+            if (composer) {
+                composer.render();
+            } else {
+                renderer.render(scene, camera);
             }
-
-            renderer.render(scene, camera);
         }
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+        window.addEventListener('resize', () => { 
+            const newPixelRatio = window.devicePixelRatio;
+            camera.aspect = window.innerWidth/window.innerHeight; 
+            camera.updateProjectionMatrix(); 
+            renderer.setSize(window.innerWidth, window.innerHeight); 
+            renderer.setPixelRatio(newPixelRatio);
+
+            if(composer) {
+                composer.setSize(window.innerWidth, window.innerHeight);
+                composer.setPixelRatio(newPixelRatio);
+                
+                // Actualizar resolución Bloom y FXAA al redimensionar
+                if(bloomPass) {
+                    bloomPass.resolution.set(window.innerWidth * newPixelRatio, window.innerHeight * newPixelRatio);
+                }
+                if(fxaaPass) {
+                    fxaaPass.uniforms['resolution'].value.set(1 / (window.innerWidth * newPixelRatio), 1 / (window.innerHeight * newPixelRatio));
+                }
+            }
         });
         document.addEventListener('gesturestart', (e) => e.preventDefault());
 
