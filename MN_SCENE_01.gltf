@@ -157,12 +157,15 @@
 		{
 			"doubleSided":true,
 			"name":"Material",
+			"normalTexture":{
+				"index":0
+			},
 			"pbrMetallicRoughness":{
 				"baseColorTexture":{
-					"index":0
+					"index":1
 				},
 				"metallicRoughnessTexture":{
-					"index":1
+					"index":2
 				}
 			}
 		}
@@ -258,20 +261,37 @@
 			"sampler":0
 		},
 		{
-			"sampler":0,
-			"source":1
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":1
+				}
+			},
+			"sampler":0
+		},
+		{
+			"extensions":{
+				"EXT_texture_webp":{
+					"source":2
+				}
+			},
+			"sampler":0
 		}
 	],
 	"images":[
+		{
+			"mimeType":"image/webp",
+			"name":"arbol_B normalmap",
+			"uri":"arbol_B%20normalmap.webp"
+		},
 		{
 			"mimeType":"image/webp",
 			"name":"arbol_B_diffuse",
 			"uri":"arbol_B_diffuse.webp"
 		},
 		{
-			"mimeType":"image/png",
+			"mimeType":"image/webp",
 			"name":"arbol_B_metallic-arbol_B_roughness",
-			"uri":"arbol_B_metallic-arbol_B_roughness.png"
+			"uri":"arbol_B_metallic-arbol_B_roughness.webp"
 		}
 	],
 	"accessors":[

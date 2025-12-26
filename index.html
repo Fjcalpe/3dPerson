@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Clean View</title>
+    <title>Juego 3D - Physics Fix</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -91,7 +91,6 @@
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         
-        // Error logging
         window.addEventListener('error', function(e) {
             const el = document.getElementById('error-log');
             el.style.display = 'block';
@@ -342,11 +341,10 @@
                         if (child.isMesh) {
                             child.castShadow = true; child.receiveShadow = true; if (child.material) child.material.side = THREE.DoubleSide;
                             const name = child.name.toLowerCase();
-                            // HIERBA DEL GLTF (ESTÁTICA, SE AÑADE UNA VEZ)
+                            // HIERBA DEL GLTF
                             if ((name.includes("hierba") || (child.parent && child.parent.name.toLowerCase().includes("hierba"))) && !name.includes("montes")) {
                                 child.geometry = child.geometry.clone();
                                 const posAttribute = child.geometry.attributes.position;
-                                // Guardamos posiciones en USERDATA del MESH (estandarizado)
                                 child.userData.originalPositions = posAttribute.array.slice(); 
                                 child.userData.worldOffset = new THREE.Vector2(x * size.x + child.position.x, z * size.z + child.position.z);
                                 grassMeshes.push(child);
@@ -426,11 +424,8 @@
             let delta = Math.min(clock.getDelta(), 0.1); const elapsed = clock.getElapsedTime();
 
             const globalDir = new THREE.Vector3(1, 0, 0); 
-            // ANIMACIÓN VIENTO (FIXED)
             for (let i = 0; i < grassMeshes.length; i++) {
                 const mesh = grassMeshes[i]; 
-                
-                // --- CORRECCIÓN: Leer ops de mesh.userData (donde lo guardan ambos tipos)
                 const ops = mesh.userData.originalPositions || (mesh.geometry.userData.originalPositions); 
                 if(!ops) continue;
 
@@ -454,7 +449,10 @@
                 mesh.geometry.attributes.position.needsUpdate = true;
             }
 
-            const steps = Math.min(4, Math.ceil(delta / (1/60))); for(let i=0; i<steps; i++) updatePhysics(delta/steps);
+            // --- FÍSICA SUAVIZADA (SIN SUB-PASOS) ---
+            // Evita stuttering en móviles cuando hay lag
+            const safeDelta = Math.min(delta, 0.1); 
+            updatePhysics(safeDelta);
 
             if (playerContainer) {
                 if (mixer) { mixer.timeScale = (isGrounded && isMoving) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
