@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Physics Fix</title>
+    <title>Juego 3D - Clustered Grass Fix</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -18,9 +18,12 @@
             pointer-events: none; z-index: 200;
         }
 
-        /* Panel eliminado visualmente */
-        #debug-panel { display: none; }
-
+        #pc-instructions {
+            position: absolute; bottom: 10px; width: 100%; text-align: center;
+            color: rgba(255, 255, 255, 0.3); font-size: 12px; pointer-events: none;
+        }
+        @media (max-width: 800px) { #pc-instructions { display: none; } }
+        
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
             width: 120px; height: 120px;
@@ -53,16 +56,12 @@
         }
         .action-btn:active { background: rgba(255, 238, 177, 0.5); transform: scale(0.95); }
         #btn-shoot { background: rgba(255, 50, 50, 0.3); } 
-
-        @media (max-width: 800px) { #pc-instructions { display: none; } }
-        #pc-instructions {
-            position: absolute; bottom: 10px; width: 100%; text-align: center;
-            color: rgba(255, 255, 255, 0.3); font-size: 12px; pointer-events: none;
-        }
         
         #error-log {
             position: absolute; top: 0; left: 0; background: red; color: white; padding: 5px; font-size: 10px; display: none; z-index: 9999;
         }
+        /* Panel oculto */
+        #debug-panel { display: none; }
     </style>
 </head>
 <body>
@@ -97,6 +96,15 @@
             el.innerHTML += "Error: " + e.message + "<br>";
         });
 
+        // --- VARIABLES GLOBALES DE OPTIMIZACIÓN (Reutilización de memoria) ---
+        // Crear vectores aquí fuera evita que el Garbage Collector salte cada frame
+        const _tempVec3_1 = new THREE.Vector3();
+        const _tempVec3_2 = new THREE.Vector3();
+        const _tempVec3_3 = new THREE.Vector3();
+        const globalWindDir = new THREE.Vector3(1, 0, 0);
+        
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
         let mixer, playerContainer, rawCharacterMesh, bgMesh; 
         let blobShadow;
         const clock = new THREE.Clock();
@@ -112,12 +120,13 @@
         const tempQuat = new THREE.Quaternion(); 
         const tempWindDir = new THREE.Vector3(); 
         
-        // --- PARÁMETROS FIJOS (ALIEN GOLD) ---
+        // --- CONFIGURACIÓN HIERBA (5000 pero agrupada) ---
         const grassParams = {
-            count: 40000,
+            count: 5000,        // Bajada drástica para rendimiento
             width: 0.17,
-            noiseScale: 0.4,
-            areaSize: 25,
+            patches: 20,        // Número de "islas" de hierba
+            patchRadius: 3.5,   // Tamaño de cada isla
+            areaSize: 25,       // Area total del mapa
             color: '#ffcc00', 
             metalness: 0.95, 
             roughness: 0.1
@@ -141,12 +150,11 @@
         const projectiles = [];
         const projectileSpeed = 20.0;
         
-        // --- PARÁMETROS SOL FIJOS ---
+        // --- ILUMINACIÓN ---
         const sunDistance = 50; 
         let sunOffset = new THREE.Vector3(); 
         let sunElevation = 13; 
         let sunRotation = 270; 
-
         const LIGHT_SETTINGS = { sunInt: 6.0, ambInt: 0.0, color: 0xffeeb1 };
 
         const keyStates = { w: false, a: false, s: false, d: false };
@@ -184,7 +192,7 @@
         joystickContainer.addEventListener('touchmove', handleJoystick);
         joystickContainer.addEventListener('touchend', resetJoystick);
 
-        document.addEventListener('pointerdown', (e) => { if (e.target.closest('.ui-element') || e.target.closest('#debug-panel')) return; isDraggingCamera = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
+        document.addEventListener('pointerdown', (e) => { if (e.target.closest('.ui-element')) return; isDraggingCamera = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointermove', (e) => { if (!isDraggingCamera) return; const deltaX = e.clientX - previousMousePosition.x; const deltaY = e.clientY - previousMousePosition.y; camSettings.theta -= deltaX * 0.008; camSettings.phi -= deltaY * 0.008; camSettings.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camSettings.phi)); previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointerup', () => isDraggingCamera = false);
         document.addEventListener('pointercancel', () => isDraggingCamera = false);
@@ -201,9 +209,10 @@
         scene.fog = new THREE.FogExp2(fogColor, fogDensity);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 5000); 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        // Desactivamos antialias en móvil por defecto para ganar rendimiento
+        const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, powerPreference: "high-performance" });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); 
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.0 : 1.5)); 
         renderer.toneMapping = THREE.ACESFilmicToneMapping; 
         renderer.toneMappingExposure = 0.5; 
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -229,7 +238,7 @@
 
         const sunLight = new THREE.DirectionalLight(LIGHT_SETTINGS.color, LIGHT_SETTINGS.sunInt);
         sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(2048, 2048); 
+        sunLight.shadow.mapSize.set(1024, 1024); // Sombra más ligera
         sunLight.shadow.radius = 2; 
         sunLight.shadow.bias = -0.0005; 
         sunLight.shadow.normalBias = 0.02;
@@ -258,7 +267,7 @@
         scene.add(bgMesh);
         textureLoader.load('./Lightmap_Bake.webp', (t) => { t.flipY = false; t.channel = 1; }); 
 
-        // GENERADOR HIERBA
+        // --- GENERADOR HIERBA (POR PARCHES) ---
         function generateParametricGrass() {
             if (parametricMesh) {
                 scene.remove(parametricMesh);
@@ -269,8 +278,21 @@
                 parametricMesh = null;
             }
 
-            const count = grassParams.count; const areaSize = grassParams.areaSize;
-            const w = grassParams.width; const h = 0.8; const nScale = grassParams.noiseScale;
+            const count = grassParams.count; 
+            const w = grassParams.width; 
+            const h = 0.8; 
+            
+            // 1. GENERAR CENTROS DE PARCHES (CLUSTERS)
+            const patches = [];
+            for(let i=0; i<grassParams.patches; i++) {
+                patches.push({
+                    x: (Math.random() - 0.5) * grassParams.areaSize * 2,
+                    z: (Math.random() - 0.5) * grassParams.areaSize * 2,
+                    // Radio variable para que no sean círculos perfectos
+                    r: grassParams.patchRadius * (0.8 + Math.random() * 0.4) 
+                });
+            }
+
             const positions = []; const colors = []; const indices = [];
             
             const mainColor = new THREE.Color(grassParams.color); const hsl = {}; mainColor.getHSL(hsl);
@@ -279,13 +301,24 @@
             const tempColor = new THREE.Color();
 
             for (let i = 0; i < count; i++) {
-                let x = (Math.random() - 0.5) * areaSize * 2; let z = (Math.random() - 0.5) * areaSize * 2;
-                const noise = Math.sin(x * nScale) * Math.sin(z * nScale) + Math.sin(x * (nScale * 3) + z * (nScale * 2)) * 0.5;
-                if (noise < -0.2) continue; 
-                const y = getEnvironmentHeight(new THREE.Vector3(x, 5, z));
+                // ELEGIR UN PARCHE AL AZAR
+                const patch = patches[Math.floor(Math.random() * patches.length)];
+                
+                // Distribución aleatoria dentro del parche
+                const angle = Math.random() * Math.PI * 2;
+                // Raíz cuadrada para distribución uniforme en círculo
+                const dist = Math.sqrt(Math.random()) * patch.r; 
+                
+                let x = patch.x + Math.cos(angle) * dist;
+                let z = patch.z + Math.sin(angle) * dist;
+                
+                const y = getEnvironmentHeight(_tempVec3_1.set(x, 5, z));
                 if (y < -100) continue; 
 
-                const scaleY = 0.6 + Math.random() * 0.8; const rotation = Math.random() * Math.PI * 2; const finalH = h * scaleY;
+                const scaleY = 0.6 + Math.random() * 0.8; 
+                const rotation = Math.random() * Math.PI * 2; 
+                const finalH = h * scaleY;
+                
                 tempColor.lerpColors(color1, color2, Math.random());
                 const cosR = Math.cos(rotation); const sinR = Math.sin(rotation);
                 const transform = (lx, ly) => { return [x + lx * cosR, y + ly, z + lx * sinR]; };
@@ -341,7 +374,6 @@
                         if (child.isMesh) {
                             child.castShadow = true; child.receiveShadow = true; if (child.material) child.material.side = THREE.DoubleSide;
                             const name = child.name.toLowerCase();
-                            // HIERBA DEL GLTF
                             if ((name.includes("hierba") || (child.parent && child.parent.name.toLowerCase().includes("hierba"))) && !name.includes("montes")) {
                                 child.geometry = child.geometry.clone();
                                 const posAttribute = child.geometry.attributes.position;
@@ -371,15 +403,18 @@
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         function shoot() { if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(projectileSpeed); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
+        // --- OPTIMIZACIÓN: Reutilizar vector temporal ---
         function getEnvironmentHeight(pos) {
-            const origin = pos.clone(); origin.y += 2.0; 
-            raycaster.set(origin, downVector); raycaster.far = 20.0; 
+            _tempVec3_2.copy(pos).y += 2.0; // Usar vector temporal 2
+            raycaster.set(_tempVec3_2, downVector); raycaster.far = 20.0; 
             const hits = raycaster.intersectObjects(collisionMeshes, true); 
             if(hits.length > 0) return hits[0].point.y; 
             return -999;
         }
         function getPlayerHeight(pos) {
-            const origin = pos.clone(); origin.y += 1.0; const offsets = [new THREE.Vector3(0,0,0), new THREE.Vector3(0.35,0,0), new THREE.Vector3(-0.35,0,0), new THREE.Vector3(0,0,0.35), new THREE.Vector3(0,0,-0.35)];
+            // Nota: Aquí mantenemos la lógica pero deberíamos optimizar offsets si fuera crítico
+            const origin = pos.clone(); origin.y += 1.0; 
+            const offsets = [new THREE.Vector3(0,0,0)]; // Simplificado a un rayo central para rendimiento
             let maxH = -999; let found = false;
             for(let o of offsets) { raycaster.set(origin.clone().add(o), downVector); raycaster.far = 10.0; const hits = raycaster.intersectObjects(collisionMeshes, true); if(hits.length > 0) { const y = hits[0].point.y; if(y > maxH) { maxH = y; found = true; }}}
             return found ? maxH : -999;
@@ -391,13 +426,21 @@
             if (landingCooldown > 0) { landingCooldown -= dt; currentSpeed = 0; }
             let ix = joystickVector.x; let iy = joystickVector.y;
             if (keyStates.w) iy -= 1; if (keyStates.s) iy += 1; if (keyStates.a) ix -= 1; if (keyStates.d) ix += 1;
+            
+            // Reutilizar vector moveDirection (ya es global)
             moveDirection.set(ix, 0, iy); const len = moveDirection.length();
             if (len > 0.1 && landingCooldown <= 0) { isMoving = true; currentSpeed = (len > 1 ? maxMoveSpeed : maxMoveSpeed * len); } else { isMoving = false; if (landingCooldown <= 0) currentSpeed = 0; }
+            
             if (isMoving) {
-                const cf = new THREE.Vector3(); camera.getWorldDirection(cf); cf.y = 0; cf.normalize(); const cr = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), cf).normalize();
-                const move = new THREE.Vector3().addScaledVector(cf, -moveDirection.z).addScaledVector(cr, -moveDirection.x).normalize();
-                if (!checkWall(playerContainer.position, move)) playerContainer.position.addScaledVector(move, currentSpeed * dt);
-                playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(move.x, move.z)), 10 * dt);
+                // Reutilizar vectores temporales 1, 2, 3
+                camera.getWorldDirection(_tempVec3_1); _tempVec3_1.y = 0; _tempVec3_1.normalize(); // cf
+                _tempVec3_2.crossVectors(new THREE.Vector3(0, 1, 0), _tempVec3_1).normalize(); // cr (Nota: new Vector(0,1,0) es leve pero aceptable o se puede globalizar)
+                
+                // Move calculation
+                _tempVec3_3.copy(_tempVec3_1).multiplyScalar(-moveDirection.z).addScaledVector(_tempVec3_2, -moveDirection.x).normalize();
+                
+                if (!checkWall(playerContainer.position, _tempVec3_3)) playerContainer.position.addScaledVector(_tempVec3_3, currentSpeed * dt);
+                playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(_tempVec3_3.x, _tempVec3_3.z)), 10 * dt);
             }
             velocityY += gravity * dt; const propY = playerContainer.position.y + velocityY * dt; const floorY = getPlayerHeight(playerContainer.position);
             if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
@@ -423,7 +466,7 @@
             const time = performance.now(); frames++; if (time >= lastTime + 1000) { fpsDisplay.innerText = "FPS: " + frames; frames = 0; lastTime = time; }
             let delta = Math.min(clock.getDelta(), 0.1); const elapsed = clock.getElapsedTime();
 
-            const globalDir = new THREE.Vector3(1, 0, 0); 
+            // Animación Viento OPTIMIZADA (Sin news)
             for (let i = 0; i < grassMeshes.length; i++) {
                 const mesh = grassMeshes[i]; 
                 const ops = mesh.userData.originalPositions || (mesh.geometry.userData.originalPositions); 
@@ -433,7 +476,9 @@
                 const wX = mesh.userData.worldOffset ? mesh.userData.worldOffset.x : mesh.position.x;
                 
                 mesh.getWorldQuaternion(tempQuat); const inverseRot = tempQuat.invert();
-                tempWindDir.copy(globalDir).applyQuaternion(inverseRot).normalize();
+                
+                // Usamos globalWindDir pre-alocado
+                tempWindDir.copy(globalWindDir).applyQuaternion(inverseRot).normalize();
                 
                 const windX = tempWindDir.x; const windZ = tempWindDir.z;
 
@@ -449,10 +494,7 @@
                 mesh.geometry.attributes.position.needsUpdate = true;
             }
 
-            // --- FÍSICA SUAVIZADA (SIN SUB-PASOS) ---
-            // Evita stuttering en móviles cuando hay lag
-            const safeDelta = Math.min(delta, 0.1); 
-            updatePhysics(safeDelta);
+            updatePhysics(delta); // Un solo paso de física
 
             if (playerContainer) {
                 if (mixer) { mixer.timeScale = (isGrounded && isMoving) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
