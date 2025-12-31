@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Auto Scale Grass</title>
+    <title>Juego 3D - Orbs Physics Update</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -18,13 +18,21 @@
             pointer-events: none; z-index: 200;
         }
 
+        #quest-message {
+            position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+            color: cyan; font-family: 'Courier New', Courier, monospace;
+            font-size: 24px; font-weight: bold; text-shadow: 0 0 10px cyan;
+            text-align: center; display: none; pointer-events: none; z-index: 300;
+            background: rgba(0,0,0,0.4); padding: 20px; border: 1px solid cyan;
+        }
+
         #settings-ui {
             position: absolute; top: 10px; left: 10px;
             background: rgba(0, 0, 0, 0.6); padding: 10px;
             border-radius: 8px; color: white; font-size: 12px;
             z-index: 200; backdrop-filter: blur(4px);
             display: flex; flex-direction: column; gap: 5px;
-            width: 150px;
+            width: 180px; /* Un poco más ancho para el nuevo slider */
         }
         #settings-ui label { font-weight: bold; display: flex; justify-content: space-between; }
         input[type=range] { width: 100%; cursor: pointer; }
@@ -75,10 +83,14 @@
 </head>
 <body>
     <div id="fps-display">FPS: 0</div>
+    <div id="quest-message">WORK AND BE PATIENT</div>
     
     <div id="settings-ui">
         <label>Densidad Hierba <span id="grass-val">20000</span></label>
         <input type="range" id="grass-slider" min="0" max="50000" step="100" value="20000">
+        
+        <label style="margin-top:10px;">Velocidad Orbes <span id="orb-speed-val">1.0</span></label>
+        <input type="range" id="orb-speed-slider" min="0.1" max="3.0" step="0.1" value="1.0">
     </div>
 
     <div id="error-log"></div>
@@ -115,36 +127,50 @@
         const _tempVec3_3 = new THREE.Vector3();
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-        let mixer, playerContainer, rawCharacterMesh, bgMesh; 
+        let mixer, sceneMixer; 
+        let playerContainer, rawCharacterMesh, bgMesh; 
         let blobShadow;
         const clock = new THREE.Clock();
         let lastTime = performance.now();
         let frames = 0;
         const fpsDisplay = document.getElementById('fps-display');
+        const messageEl = document.getElementById('quest-message');
 
         const collisionMeshes = [];
         let parametricMesh = null;
-        
-        // Variable para guardar los límites reales del mapa
         let mapBoundingBox = new THREE.Box3(); 
+
+        // Quest Variables
+        let questState = 0; 
+        const orbs = [];
+        let doorsCenter = new THREE.Vector3();
+        const doorActions = [];
+        let miradorTopY = 1000; 
+        let questOrbsCollected = 0;
 
         let grassSource = { geometry: null, material: null, scale: new THREE.Vector3(1,1,1) };
         let grassMaterialUniforms = { time: { value: 0 } }; 
 
+        // --- GESTIÓN DE SLIDERS ---
         const grassSlider = document.getElementById('grass-slider');
         const grassValLabel = document.getElementById('grass-val');
-        
-        const grassParams = {
-            count: 20000
-        };
+        const grassParams = { count: 20000 };
 
         grassSlider.addEventListener('input', (e) => {
             const val = parseInt(e.target.value);
             grassValLabel.innerText = val;
             grassParams.count = val;
-            if(grassSource.geometry) {
-                generateInstancedGrass();
-            }
+            if(grassSource.geometry) generateInstancedGrass();
+        });
+
+        // Control de Velocidad de Orbes
+        let orbSpeedMultiplier = 1.0;
+        const orbSpeedSlider = document.getElementById('orb-speed-slider');
+        const orbSpeedValLabel = document.getElementById('orb-speed-val');
+        
+        orbSpeedSlider.addEventListener('input', (e) => {
+            orbSpeedMultiplier = parseFloat(e.target.value);
+            orbSpeedValLabel.innerText = orbSpeedMultiplier.toFixed(1);
         });
 
         const maxMoveSpeed = 11.0; 
@@ -271,6 +297,139 @@
         scene.add(sunLight); scene.add(sunLight.target); 
         scene.add(new THREE.HemisphereLight(0xffd580, 0x222233, 0.5));
 
+        // --- ORB CLASS UPDATED ---
+        class Orb {
+            constructor(id) {
+                this.id = id;
+                this.mesh = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.3, 16, 16),
+                    new THREE.MeshBasicMaterial({ color: 0x00ffff })
+                );
+                this.light = new THREE.PointLight(0x00ffff, 3, 5);
+                this.mesh.add(this.light);
+                scene.add(this.mesh);
+                this.state = 'hidden'; 
+                this.velocity = new THREE.Vector3();
+                this.target = new THREE.Vector3();
+                this.collected = false;
+                this.mesh.visible = false;
+                this.spawnTime = 0; // Tiempo de nacimiento para el cooldown
+                this.oscillationOffset = Math.random() * 100; // Para que no oscilen igual
+            }
+
+            spawn(startPos) {
+                this.mesh.position.copy(startPos);
+                this.mesh.visible = true;
+                this.state = 'flying';
+                this.collected = false;
+                this.spawnTime = clock.getElapsedTime(); // Marcar tiempo de spawn
+                
+                // Color rojo para indicar "NO TOCAR"
+                this.mesh.material.color.setHex(0xff0000);
+                this.light.color.setHex(0xff0000);
+                
+                this.pickRandomTarget();
+            }
+
+            pickRandomTarget() {
+                const width = Math.max(20, mapBoundingBox.max.x - mapBoundingBox.min.x);
+                const depth = Math.max(20, mapBoundingBox.max.z - mapBoundingBox.min.z);
+                this.target.set(
+                    mapBoundingBox.min.x + Math.random() * width,
+                    1.5 + Math.random() * 1.5, 
+                    mapBoundingBox.min.z + Math.random() * depth
+                );
+            }
+
+            update(dt, playerPos) {
+                if(this.state === 'hidden') return;
+
+                const time = clock.getElapsedTime();
+
+                if(this.state === 'flying') {
+                    // Gestión de Cooldown (2 segundos)
+                    const isProtected = (time - this.spawnTime) < 2.0;
+                    
+                    if (!isProtected && this.mesh.material.color.getHex() === 0xff0000) {
+                        // Cambiar a Cyan si ya pasó el tiempo
+                        this.mesh.material.color.setHex(0x00ffff);
+                        this.light.color.setHex(0x00ffff);
+                    }
+
+                    // --- NUEVA LÓGICA DE MOVIMIENTO ONDULANTE ---
+                    // Dirección base hacia el objetivo
+                    const baseDir = _tempVec3_1.subVectors(this.target, this.mesh.position).normalize();
+                    
+                    // Cálculo de oscilación
+                    // Añadimos ondas sinusoidales a la dirección perpendiculares al movimiento
+                    // No hacemos matemáticas de vectores complejas, simplemente "ruido suave" basado en el tiempo
+                    const freq = 2.0; // Frecuencia de la onda
+                    const amp = 0.5;  // Amplitud de la onda
+                    
+                    // Modificamos ligeramente la dirección base con senos y cosenos
+                    baseDir.x += Math.sin(time * freq + this.oscillationOffset) * amp;
+                    baseDir.z += Math.cos(time * freq + this.oscillationOffset) * amp;
+                    baseDir.y += Math.sin(time * 3.0 + this.oscillationOffset) * 0.2; // Pequeña oscilación vertical
+                    
+                    baseDir.normalize(); // Re-normalizar para mantener velocidad constante
+
+                    // Aplicar velocidad con el MULTIPLICADOR DEL SLIDER
+                    const speed = 8 * orbSpeedMultiplier; 
+                    this.mesh.position.addScaledVector(baseDir, speed * dt);
+
+                    // Comprobar si ha llegado (aprox)
+                    if(this.mesh.position.distanceTo(this.target) < 2.0) {
+                        this.pickRandomTarget();
+                    }
+
+                    // Limites de altura
+                    this.mesh.position.y = Math.max(1, Math.min(4.5, this.mesh.position.y));
+
+                    // Colisión con jugador (solo si no está protegido)
+                    if(!isProtected && playerPos.distanceTo(this.mesh.position) < 1.5) {
+                        this.state = 'following';
+                        this.collected = true;
+                        questOrbsCollected++;
+                    }
+                }
+                else if (this.state === 'following') {
+                    // Follow logic (la fila)
+                }
+            }
+        }
+
+        // --- QUEST LOGIC ---
+        function startQuest() {
+            if(questState !== 0) return;
+            questState = 1;
+            messageEl.style.display = 'block';
+            setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
+
+            orbs.forEach(orb => orb.spawn(doorsCenter));
+        }
+
+        function resetQuest() {
+            console.log("QUEST RESET! MOVEMENT DETECTED");
+            questState = 1; 
+            questOrbsCollected = 0;
+            
+            doorActions.forEach(action => {
+                action.stop();
+                action.reset();
+            });
+
+            orbs.forEach(orb => {
+                // Respawnearlos desde las puertas o simplemente dispersarlos de nuevo?
+                // Mejor dispersar para no tener que esperar el cooldown otra vez si ya los tenías
+                // Pero el usuario pidió que "vuelvan a volar", así que reseteamos estado.
+                orb.state = 'flying';
+                orb.collected = false;
+                orb.mesh.material.color.setHex(0x00ffff); // Sin cooldown si es un reset por fallo
+                orb.light.color.setHex(0x00ffff);
+                orb.pickRandomTarget();
+            });
+        }
+
         function modifyMaterialForWind(material) {
             const newMat = material.clone();
             newMat.onBeforeCompile = (shader) => {
@@ -299,7 +458,6 @@
             return newMat;
         }
 
-        // --- GENERACIÓN DE HIERBA BASADA EN BOUNDING BOX ---
         function generateInstancedGrass() {
             if (parametricMesh) {
                 scene.remove(parametricMesh);
@@ -310,7 +468,6 @@
             if (!grassSource.geometry || !grassSource.material) return;
             if (grassParams.count === 0) return;
 
-            // Si el bounding box está vacío (no se cargó suelo aún), usar un defecto grande
             if (mapBoundingBox.isEmpty()) {
                 mapBoundingBox.min.set(-200, -50, -200);
                 mapBoundingBox.max.set(200, 50, 200);
@@ -326,68 +483,50 @@
 
             const dummy = new THREE.Object3D();
             const localRaycaster = new THREE.Raycaster();
-            localRaycaster.far = 100.0; // Rayo largo para encontrar alturas dispares
+            localRaycaster.far = 100.0; 
             const localDown = new THREE.Vector3(0, -1, 0);
 
             let placed = 0;
             let attempts = 0;
-            // Límite de seguridad para no congelar el navegador si el área es muy grande y vacía
             const maxAttempts = count * 5; 
 
-            // Dimensiones del mapa para randomizar
             const width = mapBoundingBox.max.x - mapBoundingBox.min.x;
             const depth = mapBoundingBox.max.z - mapBoundingBox.min.z;
-            const heightMax = mapBoundingBox.max.y + 20; // Empezar el rayo desde arriba
+            const heightMax = mapBoundingBox.max.y + 20; 
 
             while(placed < count && attempts < maxAttempts) {
                 attempts++;
-
-                // Punto aleatorio DENTRO de los límites detectados del mapa
                 const x = mapBoundingBox.min.x + Math.random() * width;
                 const z = mapBoundingBox.min.z + Math.random() * depth;
-                
                 _tempVec3_1.set(x, heightMax, z);
                 
                 localRaycaster.set(_tempVec3_1, localDown);
                 const hits = localRaycaster.intersectObjects(collisionMeshes, true);
                 
                 if (hits.length === 0) continue;
-
                 const hit = hits[0];
                 const objectName = hit.object.name.toLowerCase();
-
-                // Filtro: Solo en objetos "suelo"
                 if (!objectName.includes("suelo")) continue;
 
-                const y = hit.point.y;
-                
-                // Configurar instancia
-                dummy.position.set(x, y, z);
+                dummy.position.set(x, hit.point.y, z);
                 dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
-                
-                // Variación de tamaño simple
                 const randomScale = 0.6 + Math.random() * 0.7;
                 dummy.scale.set(
                     grassSource.scale.x * randomScale, 
                     grassSource.scale.y * randomScale * (0.8 + Math.random()*0.4), 
                     grassSource.scale.z * randomScale
                 );
-                
                 dummy.updateMatrix();
                 parametricMesh.setMatrixAt(placed, dummy.matrix);
                 placed++;
             }
-            
-            // Si no pudimos poner todas las briznas (por ejemplo, el área es muy chica), ocultar el resto
             for(let i = placed; i < count; i++) {
                 dummy.position.set(0, -99999, 0);
                 dummy.updateMatrix();
                 parametricMesh.setMatrixAt(i, dummy.matrix);
             }
-            
             parametricMesh.instanceMatrix.needsUpdate = true;
             scene.add(parametricMesh);
-            console.log(`Hierba plantada: ${placed}/${count} intentos: ${attempts}`);
         }
 
         const gltfLoader = new GLTFLoader();
@@ -395,8 +534,10 @@
             const masterModule = gltf.scene;
             scene.add(masterModule);
             
-            // Reiniciar Bounding Box
+            sceneMixer = new THREE.AnimationMixer(masterModule);
+            
             mapBoundingBox.makeEmpty();
+            let doorsCount = 0;
 
             masterModule.traverse((child) => {
                 if (child.isMesh) {
@@ -414,11 +555,28 @@
                         return;
                     }
 
+                    if (name.includes("puerta")) {
+                        doorsCenter.add(child.position);
+                        doorsCount++;
+                    }
+
                     if (name.includes("colision") || name.includes("collision") || name.includes("suelo") || name.includes("consola_mirador")) {
+                        
+                        if (name.includes("consola_mirador_colision")) {
+                             collisionMeshes.push(child);
+                             child.visible = false; 
+                             child.geometry.computeBoundingBox();
+                             const box = new THREE.Box3().setFromObject(child);
+                             miradorTopY = box.max.y - 1.0; 
+                             return;
+                        }
+                        if (name.includes("consola_mirador_escaleras")) {
+                             return;
+                        }
+
                         collisionMeshes.push(child);
                         if(name.includes("colision")) child.visible = false;
 
-                        // Si es suelo, expandir el área de generación de hierba para incluirlo
                         if(name.includes("suelo")) {
                             child.geometry.computeBoundingBox();
                             const box = child.geometry.boundingBox.clone();
@@ -428,8 +586,24 @@
                     }
                 }
             });
+
+            if(doorsCount > 0) doorsCenter.divideScalar(doorsCount);
+
+            gltf.animations.forEach((clip) => {
+                if(clip.name.toLowerCase().includes("puerta")) {
+                    const action = sceneMixer.clipAction(clip);
+                    action.loop = THREE.LoopOnce;
+                    action.clampWhenFinished = true;
+                    action.stop(); 
+                    doorActions.push(action);
+                }
+            });
             
             setTimeout(() => { if(grassSource.geometry) generateInstancedGrass(); }, 500); 
+            
+            for(let i=0; i<3; i++) {
+                orbs.push(new Orb(i));
+            }
         });
 
         gltfLoader.load('./GIRLrun.gltf', function (gltf) {
@@ -458,17 +632,12 @@
             return -999;
         }
 
-        // --- FILTRO DE PARED 45 GRADOS ---
         function checkWall(pos, dir) { 
             raycaster.set(pos.clone().add(new THREE.Vector3(0, 0.1, 0)), dir); 
             raycaster.far = 0.6; 
             const hits = raycaster.intersectObjects(collisionMeshes, true);
-            
             if (hits.length > 0) {
-                const normalY = hits[0].face.normal.y;
-                if (normalY < 0.707) {
-                    return true; 
-                }
+                if (hits[0].face.normal.y < 0.707) return true; 
             }
             return false; 
         }
@@ -498,28 +667,15 @@
             if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
             
             const distToFloor = playerContainer.position.y - floorY;
-
             if (isGrounded && distToFloor > 0 && distToFloor < 0.5 && velocityY <= 0) {
-                 playerContainer.position.y = floorY;
-                 velocityY = 0;
-                 isGrounded = true;
-            }
-            else if (propY <= floorY && velocityY <= 0) { 
+                 playerContainer.position.y = floorY; velocityY = 0; isGrounded = true;
+            } else if (propY <= floorY && velocityY <= 0) { 
                 if (!isGrounded) landingCooldown = 0.2; 
-                playerContainer.position.y = floorY; 
-                velocityY = 0; 
-                isGrounded = true; 
-            } 
-            else if (propY <= 0) { 
+                playerContainer.position.y = floorY; velocityY = 0; isGrounded = true; 
+            } else if (propY <= 0) { 
                 if (!isGrounded) landingCooldown = 0.2; 
-                playerContainer.position.y = 0; 
-                velocityY = 0; 
-                isGrounded = true; 
-            } 
-            else { 
-                playerContainer.position.y = propY; 
-                isGrounded = false; 
-            }
+                playerContainer.position.y = 0; velocityY = 0; isGrounded = true; 
+            } else { playerContainer.position.y = propY; isGrounded = false; }
         }
 
         function updateSmartCamera() {
@@ -546,6 +702,49 @@
                 sunLight.target.updateMatrixWorld();
                 sunLight.position.copy(sunLight.target.position).add(sunOffset);
                 if (bgMesh) bgMesh.position.copy(camera.position);
+
+                if (questState === 0) {
+                    if (playerContainer.position.y > miradorTopY) {
+                        startQuest();
+                    }
+                } else if (questState === 1 || questState === 2) {
+                    let collectedCount = 0;
+                    orbs.forEach((orb, index) => {
+                        orb.update(delta, playerContainer.position);
+                        if(orb.collected) {
+                            collectedCount++;
+                            const leaderPos = (index === 0) ? playerContainer.position : orbs[index-1].mesh.position;
+                            const target = leaderPos.clone();
+                            target.y += 0.5; 
+                            orb.mesh.position.lerp(target, 5 * delta);
+                        }
+                    });
+
+                    const distToDoors = playerContainer.position.distanceTo(doorsCenter);
+                    
+                    if (collectedCount === 3 && distToDoors < 6.0) {
+                        const speed = currentSpeed;
+                        const verticalSpeed = Math.abs(velocityY);
+                        
+                        if (speed < 0.1 && verticalSpeed < 0.1) {
+                            questState = 2; 
+                            doorActions.forEach(action => {
+                                if(!action.isRunning()) action.play();
+                            });
+                            
+                            if(doorActions.length > 0 && doorActions[0].time >= doorActions[0].getClip().duration - 0.1) {
+                                questState = 3; 
+                            }
+
+                        } else {
+                            if (questState === 2) {
+                                resetQuest();
+                            }
+                        }
+                    } else if (questState === 2) {
+                        resetQuest();
+                    }
+                }
             }
 
             const steps = Math.min(isMobile ? 2 : 4, Math.ceil(delta / (1/60))); 
@@ -556,6 +755,8 @@
                 updateSmartCamera();
             }
             
+            if (sceneMixer) sceneMixer.update(delta); 
+
             for (let i = projectiles.length - 1; i >= 0; i--) { 
                 const p = projectiles[i]; 
                 p.position.addScaledVector(p.userData.velocity, delta); 
