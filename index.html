@@ -3,13 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Fixed Physics</title>
+    <title>Juego 3D - Slider & Fix</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
             font-family: sans-serif; touch-action: none; user-select: none; -webkit-user-select: none;
         }
         
+        /* UI Elements */
         #fps-display {
             position: absolute; top: 10px; right: 10px;
             background: rgba(0, 0, 0, 0.5); color: #00ff00; 
@@ -17,6 +18,17 @@
             font-family: monospace; font-weight: bold; font-size: 14px;
             pointer-events: none; z-index: 200;
         }
+
+        #settings-ui {
+            position: absolute; top: 10px; left: 10px;
+            background: rgba(0, 0, 0, 0.6); padding: 10px;
+            border-radius: 8px; color: white; font-size: 12px;
+            z-index: 200; backdrop-filter: blur(4px);
+            display: flex; flex-direction: column; gap: 5px;
+            width: 150px;
+        }
+        #settings-ui label { font-weight: bold; display: flex; justify-content: space-between; }
+        input[type=range] { width: 100%; cursor: pointer; }
 
         #joystick-container {
             position: absolute; bottom: 30px; left: 30px;
@@ -65,6 +77,11 @@
 <body>
     <div id="fps-display">FPS: 0</div>
     
+    <div id="settings-ui">
+        <label>Densidad Hierba <span id="grass-val">10000</span></label>
+        <input type="range" id="grass-slider" min="0" max="10000" step="100" value="10000">
+    </div>
+
     <div id="error-log"></div>
     <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar</div>
 
@@ -112,12 +129,25 @@
         let grassSource = { geometry: null, material: null, scale: new THREE.Vector3(1,1,1) };
         let grassMaterialUniforms = { time: { value: 0 } }; 
 
+        // --- GESTIÓN DEL SLIDER ---
+        const grassSlider = document.getElementById('grass-slider');
+        const grassValLabel = document.getElementById('grass-val');
+        
         const grassParams = {
-            count: 11000,
+            count: 10000,
             areaSize: 20,
             patches: 85,
             patchRadius: 4.5 
         };
+
+        grassSlider.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            grassValLabel.innerText = val;
+            grassParams.count = val;
+            if(grassSource.geometry) {
+                generateInstancedGrass();
+            }
+        });
 
         const maxMoveSpeed = 11.0; 
         let currentSpeed = 0;
@@ -167,7 +197,7 @@
         joystickContainer.addEventListener('touchmove', handleJoystick);
         joystickContainer.addEventListener('touchend', resetJoystick);
 
-        document.addEventListener('pointerdown', (e) => { if (e.target.closest('.ui-element')) return; isDraggingCamera = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
+        document.addEventListener('pointerdown', (e) => { if (e.target.closest('.ui-element') || e.target.closest('#settings-ui')) return; isDraggingCamera = true; previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointermove', (e) => { if (!isDraggingCamera) return; const deltaX = e.clientX - previousMousePosition.x; const deltaY = e.clientY - previousMousePosition.y; camSettings.theta -= deltaX * 0.008; camSettings.phi -= deltaY * 0.008; camSettings.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camSettings.phi)); previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointerup', () => isDraggingCamera = false);
         document.addEventListener('pointercancel', () => isDraggingCamera = false);
@@ -279,6 +309,7 @@
             }
 
             if (!grassSource.geometry || !grassSource.material) return;
+            if (grassParams.count === 0) return;
 
             const count = grassParams.count;
             const windMaterial = modifyMaterialForWind(grassSource.material);
@@ -390,16 +421,12 @@
             return -999;
         }
 
-        // --- FIXED FUNCTION: getPlayerHeight con filtro de normales ---
         function getPlayerHeight(pos) {
             const origin = pos.clone(); origin.y += 1.0; 
             raycaster.set(origin, downVector); raycaster.far = 10.0; 
             const hits = raycaster.intersectObjects(collisionMeshes, true); 
-            
-            // Recorremos los hits para encontrar el primero que sea realmente suelo (normal hacia arriba)
             for(let i = 0; i < hits.length; i++) {
                 const hit = hits[i];
-                // Si la normal apunta hacia arriba (permitimos ligera inclinación > 0.5)
                 if (hit.face && hit.face.normal.y > 0.5) {
                     return hit.point.y;
                 }
@@ -407,10 +434,11 @@
             return -999;
         }
 
+        // --- SOLUCIÓN PARA LOS GOLPES ---
+        // Se sube el origen del raycast de pared de 0.8 a 1.2
         function checkWall(pos, dir) { 
-            raycaster.set(pos.clone().add(new THREE.Vector3(0,0.8,0)), dir); 
-            // Aumentado ligeramente para evitar traspasos en móvil
-            raycaster.far = 0.8; 
+            raycaster.set(pos.clone().add(new THREE.Vector3(0, 1.2, 0)), dir); 
+            raycaster.far = 0.7; // Un poco más corto para no detectar paredes lejanas
             return raycaster.intersectObjects(collisionMeshes, true).length > 0; 
         }
 
@@ -436,7 +464,6 @@
             
             if (propY <= floorY && velocityY <= 0) { 
                 if (!isGrounded) landingCooldown = 0.2; 
-                // Pequeño suavizado para evitar golpes secos, pero manteniendo firmeza
                 playerContainer.position.y = floorY; 
                 velocityY = 0; 
                 isGrounded = true; 
