@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Clean UI</title>
+    <title>Juego 3D - Fixed Physics</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -112,11 +112,10 @@
         let grassSource = { geometry: null, material: null, scale: new THREE.Vector3(1,1,1) };
         let grassMaterialUniforms = { time: { value: 0 } }; 
 
-        // --- PARÁMETROS FIJOS (GUARDADOS DE LA IMAGEN) ---
         const grassParams = {
-            count: 11000,   // Valor de la imagen
-            areaSize: 20,   // Valor de la imagen
-            patches: 85,    // Valor de la imagen
+            count: 11000,
+            areaSize: 20,
+            patches: 85,
             patchRadius: 4.5 
         };
 
@@ -248,30 +247,21 @@
             const newMat = material.clone();
             newMat.onBeforeCompile = (shader) => {
                 shader.uniforms.time = grassMaterialUniforms.time;
-                
                 shader.vertexShader = `
                     uniform float time;
                     ${shader.vertexShader}
                 `;
-                
-                // --- VIENTO INVERTIDO 180 GRADOS ---
                 shader.vertexShader = shader.vertexShader.replace(
                     '#include <begin_vertex>',
                     `
                     #include <begin_vertex>
-                    
                     float h = max(0.0, transformed.y); 
-
                     float worldX = instanceMatrix[3][0] + transformed.x;
                     float worldZ = instanceMatrix[3][2] + transformed.z;
-                    
                     float windWave = sin(time * 3.0 - worldX * 0.5 + worldZ * 0.2);
                     float bend = windWave * -0.25 * h * h; 
-
                     vec3 localWindDir = normalize(vec3(instanceMatrix[0].x, instanceMatrix[1].x, instanceMatrix[2].x));
-                    
                     transformed += localWindDir * bend;
-                    
                     vec3 localCrossDir = normalize(vec3(instanceMatrix[0].z, instanceMatrix[1].z, instanceMatrix[2].z));
                     transformed += localCrossDir * bend * 0.2;
                     `
@@ -312,12 +302,9 @@
             for (let i = 0; i < count; i++) {
                 const patch = patches[Math.floor(Math.random() * patches.length)];
                 const angle = Math.random() * Math.PI * 2;
-                
                 const dist = Math.random() * patch.r; 
-                
                 let x = patch.x + Math.cos(angle) * dist;
                 let z = patch.z + Math.sin(angle) * dist;
-                
                 _tempVec3_1.set(x, 10, z);
                 const y = getEnvironmentHeight(_tempVec3_1);
                 
@@ -330,25 +317,17 @@
 
                 dummy.position.set(x, y, z);
                 dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
-                
                 const distanceFactor = dist / patch.r; 
                 const sizeFalloff = Math.max(0.01, 1.0 - Math.pow(distanceFactor, 1.5));
                 const randomBaseScale = 0.6 + Math.random() * 0.6;
                 const finalScale = randomBaseScale * sizeFalloff;
-
-                dummy.scale.set(
-                    grassSource.scale.x * finalScale, 
-                    grassSource.scale.y * finalScale * (0.7 + Math.random()*0.5), 
-                    grassSource.scale.z * finalScale
-                );
-                
+                dummy.scale.set(grassSource.scale.x * finalScale, grassSource.scale.y * finalScale * (0.7 + Math.random()*0.5), grassSource.scale.z * finalScale);
                 dummy.updateMatrix();
                 parametricMesh.setMatrixAt(index++, dummy.matrix);
             }
             
             parametricMesh.instanceMatrix.needsUpdate = true;
             scene.add(parametricMesh);
-            console.log(`Hierba: ${count}, Parches: ${grassParams.patches}, Área: ${grassParams.areaSize}`);
         }
 
         const gltfLoader = new GLTFLoader();
@@ -387,13 +366,7 @@
                 }
             }
             
-            setTimeout(() => { 
-                if(grassSource.geometry) {
-                    generateInstancedGrass(); 
-                } else {
-                    console.error("No se encontró 'hierba_B'.");
-                }
-            }, 500); 
+            setTimeout(() => { if(grassSource.geometry) generateInstancedGrass(); }, 500); 
         });
 
         gltfLoader.load('./GIRLrun.gltf', function (gltf) {
@@ -416,13 +389,30 @@
             if(hits.length > 0) return hits[0].point.y; 
             return -999;
         }
+
+        // --- FIXED FUNCTION: getPlayerHeight con filtro de normales ---
         function getPlayerHeight(pos) {
             const origin = pos.clone(); origin.y += 1.0; 
             raycaster.set(origin, downVector); raycaster.far = 10.0; 
             const hits = raycaster.intersectObjects(collisionMeshes, true); 
-            return hits.length > 0 ? hits[0].point.y : -999;
+            
+            // Recorremos los hits para encontrar el primero que sea realmente suelo (normal hacia arriba)
+            for(let i = 0; i < hits.length; i++) {
+                const hit = hits[i];
+                // Si la normal apunta hacia arriba (permitimos ligera inclinación > 0.5)
+                if (hit.face && hit.face.normal.y > 0.5) {
+                    return hit.point.y;
+                }
+            }
+            return -999;
         }
-        function checkWall(pos, dir) { raycaster.set(pos.clone().add(new THREE.Vector3(0,0.8,0)), dir); raycaster.far = 0.6; return raycaster.intersectObjects(collisionMeshes, true).length > 0; }
+
+        function checkWall(pos, dir) { 
+            raycaster.set(pos.clone().add(new THREE.Vector3(0,0.8,0)), dir); 
+            // Aumentado ligeramente para evitar traspasos en móvil
+            raycaster.far = 0.8; 
+            return raycaster.intersectObjects(collisionMeshes, true).length > 0; 
+        }
 
         function updatePhysics(dt) {
             if (!playerContainer) return;
@@ -443,7 +433,14 @@
             }
             velocityY += gravity * dt; const propY = playerContainer.position.y + velocityY * dt; const floorY = getPlayerHeight(playerContainer.position);
             if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
-            if (propY <= floorY && velocityY <= 0) { if (!isGrounded) landingCooldown = 0.2; playerContainer.position.y = floorY; velocityY = 0; isGrounded = true; } 
+            
+            if (propY <= floorY && velocityY <= 0) { 
+                if (!isGrounded) landingCooldown = 0.2; 
+                // Pequeño suavizado para evitar golpes secos, pero manteniendo firmeza
+                playerContainer.position.y = floorY; 
+                velocityY = 0; 
+                isGrounded = true; 
+            } 
             else if (propY <= 0) { if (!isGrounded) landingCooldown = 0.2; playerContainer.position.y = 0; velocityY = 0; isGrounded = true; } 
             else { playerContainer.position.y = propY; isGrounded = false; }
         }
