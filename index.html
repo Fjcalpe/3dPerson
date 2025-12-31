@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Slider & Fix</title>
+    <title>Juego 3D - Auto Scale Grass</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
             font-family: sans-serif; touch-action: none; user-select: none; -webkit-user-select: none;
         }
         
-        /* UI Elements */
         #fps-display {
             position: absolute; top: 10px; right: 10px;
             background: rgba(0, 0, 0, 0.5); color: #00ff00; 
@@ -78,8 +77,8 @@
     <div id="fps-display">FPS: 0</div>
     
     <div id="settings-ui">
-        <label>Densidad Hierba <span id="grass-val">10000</span></label>
-        <input type="range" id="grass-slider" min="0" max="10000" step="100" value="10000">
+        <label>Densidad Hierba <span id="grass-val">20000</span></label>
+        <input type="range" id="grass-slider" min="0" max="50000" step="100" value="20000">
     </div>
 
     <div id="error-log"></div>
@@ -126,18 +125,17 @@
         const collisionMeshes = [];
         let parametricMesh = null;
         
+        // Variable para guardar los límites reales del mapa
+        let mapBoundingBox = new THREE.Box3(); 
+
         let grassSource = { geometry: null, material: null, scale: new THREE.Vector3(1,1,1) };
         let grassMaterialUniforms = { time: { value: 0 } }; 
 
-        // --- GESTIÓN DEL SLIDER ---
         const grassSlider = document.getElementById('grass-slider');
         const grassValLabel = document.getElementById('grass-val');
         
         const grassParams = {
-            count: 10000,
-            areaSize: 20,
-            patches: 85,
-            patchRadius: 4.5 
+            count: 20000
         };
 
         grassSlider.addEventListener('input', (e) => {
@@ -301,6 +299,7 @@
             return newMat;
         }
 
+        // --- GENERACIÓN DE HIERBA BASADA EN BOUNDING BOX ---
         function generateInstancedGrass() {
             if (parametricMesh) {
                 scene.remove(parametricMesh);
@@ -311,6 +310,12 @@
             if (!grassSource.geometry || !grassSource.material) return;
             if (grassParams.count === 0) return;
 
+            // Si el bounding box está vacío (no se cargó suelo aún), usar un defecto grande
+            if (mapBoundingBox.isEmpty()) {
+                mapBoundingBox.min.set(-200, -50, -200);
+                mapBoundingBox.max.set(200, 50, 200);
+            }
+
             const count = grassParams.count;
             const windMaterial = modifyMaterialForWind(grassSource.material);
             
@@ -320,82 +325,109 @@
             parametricMesh.frustumCulled = false; 
 
             const dummy = new THREE.Object3D();
-            const patches = [];
-            for(let i=0; i<grassParams.patches; i++) {
-                patches.push({
-                    x: (Math.random() - 0.5) * grassParams.areaSize * 2,
-                    z: (Math.random() - 0.5) * grassParams.areaSize * 2,
-                    r: grassParams.patchRadius * (0.8 + Math.random() * 0.4) 
-                });
-            }
+            const localRaycaster = new THREE.Raycaster();
+            localRaycaster.far = 100.0; // Rayo largo para encontrar alturas dispares
+            const localDown = new THREE.Vector3(0, -1, 0);
 
-            let index = 0;
-            for (let i = 0; i < count; i++) {
-                const patch = patches[Math.floor(Math.random() * patches.length)];
-                const angle = Math.random() * Math.PI * 2;
-                const dist = Math.random() * patch.r; 
-                let x = patch.x + Math.cos(angle) * dist;
-                let z = patch.z + Math.sin(angle) * dist;
-                _tempVec3_1.set(x, 10, z);
-                const y = getEnvironmentHeight(_tempVec3_1);
+            let placed = 0;
+            let attempts = 0;
+            // Límite de seguridad para no congelar el navegador si el área es muy grande y vacía
+            const maxAttempts = count * 5; 
+
+            // Dimensiones del mapa para randomizar
+            const width = mapBoundingBox.max.x - mapBoundingBox.min.x;
+            const depth = mapBoundingBox.max.z - mapBoundingBox.min.z;
+            const heightMax = mapBoundingBox.max.y + 20; // Empezar el rayo desde arriba
+
+            while(placed < count && attempts < maxAttempts) {
+                attempts++;
+
+                // Punto aleatorio DENTRO de los límites detectados del mapa
+                const x = mapBoundingBox.min.x + Math.random() * width;
+                const z = mapBoundingBox.min.z + Math.random() * depth;
                 
-                if (y < -100) {
-                    dummy.position.set(0, -9999, 0);
-                    dummy.updateMatrix();
-                    parametricMesh.setMatrixAt(index++, dummy.matrix);
-                    continue; 
-                }
+                _tempVec3_1.set(x, heightMax, z);
+                
+                localRaycaster.set(_tempVec3_1, localDown);
+                const hits = localRaycaster.intersectObjects(collisionMeshes, true);
+                
+                if (hits.length === 0) continue;
 
+                const hit = hits[0];
+                const objectName = hit.object.name.toLowerCase();
+
+                // Filtro: Solo en objetos "suelo"
+                if (!objectName.includes("suelo")) continue;
+
+                const y = hit.point.y;
+                
+                // Configurar instancia
                 dummy.position.set(x, y, z);
                 dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
-                const distanceFactor = dist / patch.r; 
-                const sizeFalloff = Math.max(0.01, 1.0 - Math.pow(distanceFactor, 1.5));
-                const randomBaseScale = 0.6 + Math.random() * 0.6;
-                const finalScale = randomBaseScale * sizeFalloff;
-                dummy.scale.set(grassSource.scale.x * finalScale, grassSource.scale.y * finalScale * (0.7 + Math.random()*0.5), grassSource.scale.z * finalScale);
+                
+                // Variación de tamaño simple
+                const randomScale = 0.6 + Math.random() * 0.7;
+                dummy.scale.set(
+                    grassSource.scale.x * randomScale, 
+                    grassSource.scale.y * randomScale * (0.8 + Math.random()*0.4), 
+                    grassSource.scale.z * randomScale
+                );
+                
                 dummy.updateMatrix();
-                parametricMesh.setMatrixAt(index++, dummy.matrix);
+                parametricMesh.setMatrixAt(placed, dummy.matrix);
+                placed++;
+            }
+            
+            // Si no pudimos poner todas las briznas (por ejemplo, el área es muy chica), ocultar el resto
+            for(let i = placed; i < count; i++) {
+                dummy.position.set(0, -99999, 0);
+                dummy.updateMatrix();
+                parametricMesh.setMatrixAt(i, dummy.matrix);
             }
             
             parametricMesh.instanceMatrix.needsUpdate = true;
             scene.add(parametricMesh);
+            console.log(`Hierba plantada: ${placed}/${count} intentos: ${attempts}`);
         }
 
         const gltfLoader = new GLTFLoader();
         gltfLoader.load('./MN_SCENE_01.gltf', function (gltf) {
             const masterModule = gltf.scene;
-            const size = new THREE.Vector3(); new THREE.Box3().setFromObject(masterModule).getSize(size);
+            scene.add(masterModule);
             
-            for (let x = -1; x <= 1; x++) {
-                for (let z = -1; z <= 1; z++) {
-                    let moduleInstance = masterModule.clone(); 
-                    moduleInstance.position.set(x * size.x, 0, z * size.z); 
-                    scene.add(moduleInstance); 
-                    
-                    moduleInstance.traverse((child) => {
-                        if (child.isMesh) {
-                            child.castShadow = true; 
-                            child.receiveShadow = true; 
-                            const name = child.name.toLowerCase();
-                            
-                            if (name.includes("hierba_b")) {
-                                if (!grassSource.geometry) {
-                                    grassSource.geometry = child.geometry.clone(); 
-                                    grassSource.material = child.material; 
-                                    grassSource.scale.copy(child.scale); 
-                                }
-                                child.visible = false; 
-                                return;
-                            }
+            // Reiniciar Bounding Box
+            mapBoundingBox.makeEmpty();
 
-                            if (name.includes("colision") || name.includes("collision") || name.includes("suelo")) {
-                                collisionMeshes.push(child);
-                                if(name.includes("colision")) child.visible = false;
-                            }
+            masterModule.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true; 
+                    child.receiveShadow = true; 
+                    const name = child.name.toLowerCase();
+                    
+                    if (name.includes("hierba_b")) {
+                        if (!grassSource.geometry) {
+                            grassSource.geometry = child.geometry.clone(); 
+                            grassSource.material = child.material; 
+                            grassSource.scale.copy(child.scale); 
                         }
-                    });
+                        child.visible = false; 
+                        return;
+                    }
+
+                    if (name.includes("colision") || name.includes("collision") || name.includes("suelo") || name.includes("consola_mirador")) {
+                        collisionMeshes.push(child);
+                        if(name.includes("colision")) child.visible = false;
+
+                        // Si es suelo, expandir el área de generación de hierba para incluirlo
+                        if(name.includes("suelo")) {
+                            child.geometry.computeBoundingBox();
+                            const box = child.geometry.boundingBox.clone();
+                            box.applyMatrix4(child.matrixWorld);
+                            mapBoundingBox.union(box);
+                        }
+                    }
                 }
-            }
+            });
             
             setTimeout(() => { if(grassSource.geometry) generateInstancedGrass(); }, 500); 
         });
@@ -413,14 +445,6 @@
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         function shoot() { if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
-        function getEnvironmentHeight(pos) {
-            _tempVec3_2.copy(pos).y += 5.0; 
-            raycaster.set(_tempVec3_2, downVector); raycaster.far = 30.0; 
-            const hits = raycaster.intersectObjects(collisionMeshes, true); 
-            if(hits.length > 0) return hits[0].point.y; 
-            return -999;
-        }
-
         function getPlayerHeight(pos) {
             const origin = pos.clone(); origin.y += 1.0; 
             raycaster.set(origin, downVector); raycaster.far = 10.0; 
@@ -434,12 +458,19 @@
             return -999;
         }
 
-        // --- SOLUCIÓN PARA LOS GOLPES ---
-        // Se sube el origen del raycast de pared de 0.8 a 1.2
+        // --- FILTRO DE PARED 45 GRADOS ---
         function checkWall(pos, dir) { 
-            raycaster.set(pos.clone().add(new THREE.Vector3(0, 1.2, 0)), dir); 
-            raycaster.far = 0.7; // Un poco más corto para no detectar paredes lejanas
-            return raycaster.intersectObjects(collisionMeshes, true).length > 0; 
+            raycaster.set(pos.clone().add(new THREE.Vector3(0, 0.1, 0)), dir); 
+            raycaster.far = 0.6; 
+            const hits = raycaster.intersectObjects(collisionMeshes, true);
+            
+            if (hits.length > 0) {
+                const normalY = hits[0].face.normal.y;
+                if (normalY < 0.707) {
+                    return true; 
+                }
+            }
+            return false; 
         }
 
         function updatePhysics(dt) {
@@ -459,17 +490,36 @@
                 if (!checkWall(playerContainer.position, _tempVec3_3)) playerContainer.position.addScaledVector(_tempVec3_3, currentSpeed * dt);
                 playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(_tempVec3_3.x, _tempVec3_3.z)), 10 * dt);
             }
-            velocityY += gravity * dt; const propY = playerContainer.position.y + velocityY * dt; const floorY = getPlayerHeight(playerContainer.position);
+            
+            velocityY += gravity * dt; 
+            const propY = playerContainer.position.y + velocityY * dt; 
+            const floorY = getPlayerHeight(playerContainer.position);
+            
             if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
             
-            if (propY <= floorY && velocityY <= 0) { 
+            const distToFloor = playerContainer.position.y - floorY;
+
+            if (isGrounded && distToFloor > 0 && distToFloor < 0.5 && velocityY <= 0) {
+                 playerContainer.position.y = floorY;
+                 velocityY = 0;
+                 isGrounded = true;
+            }
+            else if (propY <= floorY && velocityY <= 0) { 
                 if (!isGrounded) landingCooldown = 0.2; 
                 playerContainer.position.y = floorY; 
                 velocityY = 0; 
                 isGrounded = true; 
             } 
-            else if (propY <= 0) { if (!isGrounded) landingCooldown = 0.2; playerContainer.position.y = 0; velocityY = 0; isGrounded = true; } 
-            else { playerContainer.position.y = propY; isGrounded = false; }
+            else if (propY <= 0) { 
+                if (!isGrounded) landingCooldown = 0.2; 
+                playerContainer.position.y = 0; 
+                velocityY = 0; 
+                isGrounded = true; 
+            } 
+            else { 
+                playerContainer.position.y = propY; 
+                isGrounded = false; 
+            }
         }
 
         function updateSmartCamera() {
