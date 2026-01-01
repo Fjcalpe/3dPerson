@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Orbs Physics Update</title>
+    <title>Juego 3D - Cinematic Choreography</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -19,12 +19,23 @@
         }
 
         #quest-message {
-            position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+            position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%);
             color: cyan; font-family: 'Courier New', Courier, monospace;
             font-size: 24px; font-weight: bold; text-shadow: 0 0 10px cyan;
             text-align: center; display: none; pointer-events: none; z-index: 300;
             background: rgba(0,0,0,0.4); padding: 20px; border: 1px solid cyan;
         }
+
+        .cinematic-bar {
+            position: absolute; left: 0; width: 100%; height: 0;
+            background: black; z-index: 150; transition: height 0.5s;
+        }
+        #bar-top { top: 0; }
+        #bar-bottom { bottom: 0; }
+        body.cinematic-mode #bar-top, body.cinematic-mode #bar-bottom { height: 10%; }
+        body.cinematic-mode .ui-element { opacity: 0; pointer-events: none; }
+
+        .ui-element { transition: opacity 0.5s; }
 
         #settings-ui {
             position: absolute; top: 10px; left: 10px;
@@ -32,7 +43,7 @@
             border-radius: 8px; color: white; font-size: 12px;
             z-index: 200; backdrop-filter: blur(4px);
             display: flex; flex-direction: column; gap: 5px;
-            width: 180px; /* Un poco más ancho para el nuevo slider */
+            width: 180px;
         }
         #settings-ui label { font-weight: bold; display: flex; justify-content: space-between; }
         input[type=range] { width: 100%; cursor: pointer; }
@@ -82,19 +93,21 @@
     </style>
 </head>
 <body>
+    <div id="bar-top" class="cinematic-bar"></div>
+    <div id="bar-bottom" class="cinematic-bar"></div>
+
     <div id="fps-display">FPS: 0</div>
     <div id="quest-message">WORK AND BE PATIENT</div>
     
-    <div id="settings-ui">
+    <div id="settings-ui" class="ui-element">
         <label>Densidad Hierba <span id="grass-val">20000</span></label>
         <input type="range" id="grass-slider" min="0" max="50000" step="100" value="20000">
-        
         <label style="margin-top:10px;">Velocidad Orbes <span id="orb-speed-val">1.0</span></label>
         <input type="range" id="orb-speed-slider" min="0.1" max="3.0" step="0.1" value="1.0">
     </div>
 
     <div id="error-log"></div>
-    <div id="pc-instructions">WASD: Mover | ESPACIO: Saltar</div>
+    <div id="pc-instructions" class="ui-element">WASD: Mover | ESPACIO: Saltar</div>
 
     <div id="joystick-container" class="ui-element"><div id="joystick-thumb"></div></div>
 
@@ -137,21 +150,22 @@
         const messageEl = document.getElementById('quest-message');
 
         const collisionMeshes = [];
+        let platformMesh = null; 
         let parametricMesh = null;
         let mapBoundingBox = new THREE.Box3(); 
 
-        // Quest Variables
         let questState = 0; 
+        let isCinematic = false;
+        let cinematicStartTime = 0;
+        
         const orbs = [];
         let doorsCenter = new THREE.Vector3();
         const doorActions = [];
-        let miradorTopY = 1000; 
         let questOrbsCollected = 0;
 
         let grassSource = { geometry: null, material: null, scale: new THREE.Vector3(1,1,1) };
         let grassMaterialUniforms = { time: { value: 0 } }; 
 
-        // --- GESTIÓN DE SLIDERS ---
         const grassSlider = document.getElementById('grass-slider');
         const grassValLabel = document.getElementById('grass-val');
         const grassParams = { count: 20000 };
@@ -163,7 +177,6 @@
             if(grassSource.geometry) generateInstancedGrass();
         });
 
-        // Control de Velocidad de Orbes
         let orbSpeedMultiplier = 1.0;
         const orbSpeedSlider = document.getElementById('orb-speed-slider');
         const orbSpeedValLabel = document.getElementById('orb-speed-val');
@@ -199,6 +212,7 @@
         let isDraggingJoystick = false;
 
         const handleJoystick = (e) => {
+            if(isCinematic) return; 
             if(e.type.startsWith('touch')) e.preventDefault();
             if (!isDraggingJoystick) return;
             const rect = joystickContainer.getBoundingClientRect();
@@ -225,7 +239,7 @@
         document.addEventListener('pointermove', (e) => { if (!isDraggingCamera) return; const deltaX = e.clientX - previousMousePosition.x; const deltaY = e.clientY - previousMousePosition.y; camSettings.theta -= deltaX * 0.008; camSettings.phi -= deltaY * 0.008; camSettings.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camSettings.phi)); previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointerup', () => isDraggingCamera = false);
         document.addEventListener('pointercancel', () => isDraggingCamera = false);
-        document.addEventListener('keydown', (e) => { if(e.code==='KeyW') keyStates.w = true; if(e.code==='KeyS') keyStates.s = true; if(e.code==='KeyA') keyStates.a = true; if(e.code==='KeyD') keyStates.d = true; if(e.code==='Space') jump(); if(e.code==='KeyP') shoot(); });
+        document.addEventListener('keydown', (e) => { if(isCinematic) return; if(e.code==='KeyW') keyStates.w = true; if(e.code==='KeyS') keyStates.s = true; if(e.code==='KeyA') keyStates.a = true; if(e.code==='KeyD') keyStates.d = true; if(e.code==='Space') jump(); if(e.code==='KeyP') shoot(); });
         document.addEventListener('keyup', (e) => { if(e.code==='KeyW') keyStates.w = false; if(e.code==='KeyS') keyStates.s = false; if(e.code==='KeyA') keyStates.a = false; if(e.code==='KeyD') keyStates.d = false; });
         const jumpBtn = document.getElementById('btn-jump'); const shootBtn = document.getElementById('btn-shoot');
         const triggerAction = (action) => (e) => { e.preventDefault(); action(); };
@@ -297,7 +311,7 @@
         scene.add(sunLight); scene.add(sunLight.target); 
         scene.add(new THREE.HemisphereLight(0xffd580, 0x222233, 0.5));
 
-        // --- ORB CLASS UPDATED ---
+        // --- ORB CLASS ---
         class Orb {
             constructor(id) {
                 this.id = id;
@@ -313,21 +327,51 @@
                 this.target = new THREE.Vector3();
                 this.collected = false;
                 this.mesh.visible = false;
-                this.spawnTime = 0; // Tiempo de nacimiento para el cooldown
-                this.oscillationOffset = Math.random() * 100; // Para que no oscilen igual
+                this.spawnTime = 0;
+                this.oscillationOffset = Math.random() * 100;
+                this.startCinematicPos = new THREE.Vector3();
+                this.cinematicTargetPos = new THREE.Vector3();
             }
 
-            spawn(startPos) {
-                this.mesh.position.copy(startPos);
+            spawnStacked(basePos, playerPos) {
                 this.mesh.visible = true;
-                this.state = 'flying';
+                this.state = 'cinematic_stack';
                 this.collected = false;
-                this.spawnTime = clock.getElapsedTime(); // Marcar tiempo de spawn
                 
-                // Color rojo para indicar "NO TOCAR"
                 this.mesh.material.color.setHex(0xff0000);
                 this.light.color.setHex(0xff0000);
                 
+                // Calcular posición inicial: 2 metros delante del jugador, no en la puerta
+                const toDoor = new THREE.Vector3().subVectors(basePos, playerPos).normalize();
+                
+                // Posición base delante del personaje
+                this.startCinematicPos.copy(playerPos).add(toDoor.multiplyScalar(2.0));
+                this.startCinematicPos.y += 1.5; 
+
+                // Posición inicial apilada
+                this.mesh.position.copy(this.startCinematicPos);
+                this.mesh.position.y += (this.id * 0.6); // Stack apretado
+
+                // Calcular posición destino "despliegue" (laterales)
+                // Usamos el vector "Right" del jugador
+                const up = new THREE.Vector3(0, 1, 0);
+                const right = new THREE.Vector3().crossVectors(toDoor, up).normalize();
+
+                this.cinematicTargetPos.copy(this.mesh.position);
+                this.cinematicTargetPos.y += 2.0; // Subir
+
+                if (this.id === 0) { // Izquierda
+                    this.cinematicTargetPos.addScaledVector(right, -3.0);
+                } else if (this.id === 1) { // Centro/Arriba
+                    this.cinematicTargetPos.y += 2.0; 
+                } else if (this.id === 2) { // Derecha
+                    this.cinematicTargetPos.addScaledVector(right, 3.0);
+                }
+            }
+
+            scatter() {
+                this.state = 'flying';
+                this.spawnTime = clock.getElapsedTime(); 
                 this.pickRandomTarget();
             }
 
@@ -341,51 +385,51 @@
                 );
             }
 
-            update(dt, playerPos) {
+            update(dt, playerPos, cinematicTime) {
                 if(this.state === 'hidden') return;
-
+                
                 const time = clock.getElapsedTime();
 
+                if(this.state === 'cinematic_stack') {
+                    // Animación durante cinemática
+                    // De 0 a 1 seg: quietos (stack)
+                    // De 1 a 4 seg: se abren a los lados (cinematicTargetPos)
+                    if (cinematicTime > 1.0) {
+                        const t = Math.min(1.0, (cinematicTime - 1.0) / 3.0); // 0 a 1 durante la apertura
+                        // Interpolación suave
+                        const ease = t * t * (3 - 2 * t); // Smoothstep
+                        this.mesh.position.lerpVectors(this.startCinematicPos.clone().add(new THREE.Vector3(0, this.id*0.6, 0)), this.cinematicTargetPos, ease);
+                    } else {
+                         // Pequeña oscilación inicial
+                         this.mesh.position.y = this.startCinematicPos.y + (this.id * 0.6) + Math.sin(time * 5) * 0.05;
+                    }
+                    return;
+                }
+
                 if(this.state === 'flying') {
-                    // Gestión de Cooldown (2 segundos)
                     const isProtected = (time - this.spawnTime) < 2.0;
-                    
                     if (!isProtected && this.mesh.material.color.getHex() === 0xff0000) {
-                        // Cambiar a Cyan si ya pasó el tiempo
                         this.mesh.material.color.setHex(0x00ffff);
                         this.light.color.setHex(0x00ffff);
                     }
 
-                    // --- NUEVA LÓGICA DE MOVIMIENTO ONDULANTE ---
-                    // Dirección base hacia el objetivo
                     const baseDir = _tempVec3_1.subVectors(this.target, this.mesh.position).normalize();
-                    
-                    // Cálculo de oscilación
-                    // Añadimos ondas sinusoidales a la dirección perpendiculares al movimiento
-                    // No hacemos matemáticas de vectores complejas, simplemente "ruido suave" basado en el tiempo
-                    const freq = 2.0; // Frecuencia de la onda
-                    const amp = 0.5;  // Amplitud de la onda
-                    
-                    // Modificamos ligeramente la dirección base con senos y cosenos
+                    const freq = 2.0; 
+                    const amp = 0.5;
                     baseDir.x += Math.sin(time * freq + this.oscillationOffset) * amp;
                     baseDir.z += Math.cos(time * freq + this.oscillationOffset) * amp;
-                    baseDir.y += Math.sin(time * 3.0 + this.oscillationOffset) * 0.2; // Pequeña oscilación vertical
+                    baseDir.y += Math.sin(time * 3.0 + this.oscillationOffset) * 0.2;
                     
-                    baseDir.normalize(); // Re-normalizar para mantener velocidad constante
+                    baseDir.normalize();
 
-                    // Aplicar velocidad con el MULTIPLICADOR DEL SLIDER
                     const speed = 8 * orbSpeedMultiplier; 
                     this.mesh.position.addScaledVector(baseDir, speed * dt);
 
-                    // Comprobar si ha llegado (aprox)
                     if(this.mesh.position.distanceTo(this.target) < 2.0) {
                         this.pickRandomTarget();
                     }
-
-                    // Limites de altura
                     this.mesh.position.y = Math.max(1, Math.min(4.5, this.mesh.position.y));
 
-                    // Colisión con jugador (solo si no está protegido)
                     if(!isProtected && playerPos.distanceTo(this.mesh.position) < 1.5) {
                         this.state = 'following';
                         this.collected = true;
@@ -393,41 +437,52 @@
                     }
                 }
                 else if (this.state === 'following') {
-                    // Follow logic (la fila)
+                    // Logic handled outside
                 }
             }
         }
 
-        // --- QUEST LOGIC ---
-        function startQuest() {
-            if(questState !== 0) return;
+        // --- QUEST & CINEMATIC LOGIC ---
+        function startQuestCinematic() {
+            if(isCinematic) return; 
+            
             questState = 1;
+            isCinematic = true;
+            cinematicStartTime = clock.getElapsedTime();
+            
+            document.body.classList.add('cinematic-mode');
+            
             messageEl.style.display = 'block';
             setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
 
-            orbs.forEach(orb => orb.spawn(doorsCenter));
+            // Spawnear orbes con referencia al jugador
+            orbs.forEach(orb => orb.spawnStacked(doorsCenter, playerContainer.position));
+            
+            currentSpeed = 0;
+            keyStates.w = keyStates.a = keyStates.s = keyStates.d = false;
+            joystickVector = { x:0, y:0 };
+        }
+
+        function endCinematic() {
+            isCinematic = false;
+            document.body.classList.remove('cinematic-mode');
+            orbs.forEach(orb => orb.scatter());
         }
 
         function resetQuest() {
-            console.log("QUEST RESET! MOVEMENT DETECTED");
-            questState = 1; 
+            console.log("QUEST RESET! REPLAYING CINEMATIC");
             questOrbsCollected = 0;
-            
-            doorActions.forEach(action => {
-                action.stop();
-                action.reset();
-            });
+            doorActions.forEach(action => { action.stop(); action.reset(); });
+            startQuestCinematic();
+        }
 
-            orbs.forEach(orb => {
-                // Respawnearlos desde las puertas o simplemente dispersarlos de nuevo?
-                // Mejor dispersar para no tener que esperar el cooldown otra vez si ya los tenías
-                // Pero el usuario pidió que "vuelvan a volar", así que reseteamos estado.
-                orb.state = 'flying';
-                orb.collected = false;
-                orb.mesh.material.color.setHex(0x00ffff); // Sin cooldown si es un reset por fallo
-                orb.light.color.setHex(0x00ffff);
-                orb.pickRandomTarget();
-            });
+        function checkPlatform() {
+            if(!playerContainer || !platformMesh) return false;
+            const rayOrigin = playerContainer.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+            raycaster.set(rayOrigin, downVector);
+            raycaster.far = 2.0;
+            const hits = raycaster.intersectObject(platformMesh, false); 
+            return hits.length > 0;
         }
 
         function modifyMaterialForWind(material) {
@@ -562,12 +617,16 @@
 
                     if (name.includes("colision") || name.includes("collision") || name.includes("suelo") || name.includes("consola_mirador")) {
                         
+                        if (name.includes("consola_mirador_colision_plataforma")) {
+                            platformMesh = child;
+                            child.visible = false;
+                            collisionMeshes.push(child);
+                            return;
+                        }
+
                         if (name.includes("consola_mirador_colision")) {
                              collisionMeshes.push(child);
                              child.visible = false; 
-                             child.geometry.computeBoundingBox();
-                             const box = new THREE.Box3().setFromObject(child);
-                             miradorTopY = box.max.y - 1.0; 
                              return;
                         }
                         if (name.includes("consola_mirador_escaleras")) {
@@ -615,9 +674,9 @@
             if (gltf.animations && gltf.animations.length > 0) { mixer = new THREE.AnimationMixer(rawCharacterMesh); mixer.clipAction(gltf.animations[0]).play(); mixer.timeScale = 0; }
         });
 
-        function jump() { if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } }
+        function jump() { if(isCinematic) return; if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } }
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        function shoot() { if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
+        function shoot() { if(isCinematic) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
         function getPlayerHeight(pos) {
             const origin = pos.clone(); origin.y += 1.0; 
@@ -644,6 +703,16 @@
 
         function updatePhysics(dt) {
             if (!playerContainer) return;
+            if (isCinematic) {
+                currentSpeed = 0;
+                velocityY += gravity * dt;
+                const propY = playerContainer.position.y + velocityY * dt;
+                const floorY = getPlayerHeight(playerContainer.position);
+                if (propY <= floorY) { playerContainer.position.y = floorY; velocityY = 0; }
+                else { playerContainer.position.y = propY; }
+                return;
+            }
+
             if (landingCooldown > 0) { landingCooldown -= dt; currentSpeed = 0; }
             let ix = joystickVector.x; let iy = joystickVector.y;
             if (keyStates.w) iy -= 1; if (keyStates.s) iy += 1; if (keyStates.a) ix -= 1; if (keyStates.d) ix += 1;
@@ -680,6 +749,34 @@
 
         function updateSmartCamera() {
             if (!playerContainer) return;
+
+            if (isCinematic) {
+                const time = clock.getElapsedTime() - cinematicStartTime;
+                const toDoor = _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
+                const lookTarget = playerContainer.position.clone().add(toDoor.clone().multiplyScalar(5));
+                lookTarget.y += 2.0;
+
+                let targetPos;
+                if (time < 1.0) {
+                    targetPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(3.0));
+                    targetPos.y += 1.5;
+                } else if (time < 3.5) {
+                    const t = (time - 1.0) / 2.5; 
+                    const startPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(3.0)).add(new THREE.Vector3(0, 1.5, 0));
+                    const endPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
+                    targetPos = new THREE.Vector3().lerpVectors(startPos, endPos, t); 
+                } else {
+                     targetPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
+                     if (time > 4.5) {
+                         endCinematic();
+                         return; 
+                     }
+                }
+                camera.position.lerp(targetPos, 0.1);
+                camera.lookAt(lookTarget);
+                return;
+            }
+
             const ideal = playerContainer.position.clone().add(new THREE.Vector3(camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta), camSettings.radius * Math.cos(camSettings.phi), camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)));
             const head = playerContainer.position.clone().add(new THREE.Vector3(0, 1.5, 0));
             const dir = new THREE.Vector3().subVectors(ideal, head).normalize();
@@ -704,13 +801,16 @@
                 if (bgMesh) bgMesh.position.copy(camera.position);
 
                 if (questState === 0) {
-                    if (playerContainer.position.y > miradorTopY) {
-                        startQuest();
+                    if (checkPlatform()) {
+                        startQuestCinematic();
                     }
                 } else if (questState === 1 || questState === 2) {
                     let collectedCount = 0;
+                    let cinematicTime = 0;
+                    if(isCinematic) cinematicTime = clock.getElapsedTime() - cinematicStartTime;
+
                     orbs.forEach((orb, index) => {
-                        orb.update(delta, playerContainer.position);
+                        orb.update(delta, playerContainer.position, cinematicTime);
                         if(orb.collected) {
                             collectedCount++;
                             const leaderPos = (index === 0) ? playerContainer.position : orbs[index-1].mesh.position;
@@ -720,9 +820,9 @@
                         }
                     });
 
-                    const distToDoors = playerContainer.position.distanceTo(doorsCenter);
+                    const onPlatform = checkPlatform();
                     
-                    if (collectedCount === 3 && distToDoors < 6.0) {
+                    if (collectedCount === 3 && onPlatform) {
                         const speed = currentSpeed;
                         const verticalSpeed = Math.abs(velocityY);
                         
@@ -751,7 +851,7 @@
             for(let i=0; i<steps; i++) updatePhysics(delta/steps);
 
             if (playerContainer) {
-                if (mixer) { mixer.timeScale = (isGrounded && isMoving) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
+                if (mixer) { mixer.timeScale = (isGrounded && isMoving && !isCinematic) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
                 updateSmartCamera();
             }
             
