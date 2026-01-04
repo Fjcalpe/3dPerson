@@ -7,7 +7,7 @@ fullContent:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Speed Balanced</title>
+    <title>Juego 3D - Tighter Camera</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -191,7 +191,6 @@ fullContent:
 
         const orbSpeedMultiplier = 0.2;
 
-        // AJUSTE DE VELOCIDAD: De 11.0 a 7.5 para que la cámara pueda seguirlo
         const maxMoveSpeed = 7.5; 
         
         let currentSpeed = 0;
@@ -818,8 +817,8 @@ fullContent:
             
             _camHead.copy(playerContainer.position).y += 1.5; 
             
-            // AJUSTE CÁMARA: De 0.1 a 0.15 para que persiga más rápido
-            camera.position.lerp(_camIdeal, 0.15);
+            // AJUSTE CÁMARA: De 0.15 a 0.25 para un seguimiento más cerrado
+            camera.position.lerp(_camIdeal, 0.25);
 
             const targetLook = _tempVec3_3.copy(playerContainer.position);
             targetLook.y += 1.5;
@@ -829,7 +828,7 @@ fullContent:
                 isLookAtInitialized = true;
             }
 
-            _currentLookAt.lerp(targetLook, 0.15); 
+            _currentLookAt.lerp(targetLook, 0.25); 
             camera.lookAt(_currentLookAt);
         }
 
