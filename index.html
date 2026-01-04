@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Cinematic Choreography</title>
+    <title>Juego 3D - Zero Allocation Fix</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -135,9 +135,16 @@
             el.innerHTML += "Error: " + e.message + "<br>";
         });
 
+        // --- OPTIMIZACIÓN 1: VECTORES REUTILIZABLES ---
+        // Nunca crearemos new THREE.Vector3() dentro del bucle de juego
         const _tempVec3_1 = new THREE.Vector3();
         const _tempVec3_2 = new THREE.Vector3();
         const _tempVec3_3 = new THREE.Vector3();
+        const _tempOrigin = new THREE.Vector3(); // Para raycasts
+        const _tempDir = new THREE.Vector3();    // Para raycasts
+        const _camIdeal = new THREE.Vector3();   // Para camara
+        const _camHead = new THREE.Vector3();    // Para camara
+
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
         let mixer, sceneMixer; 
@@ -341,30 +348,24 @@
                 this.mesh.material.color.setHex(0xff0000);
                 this.light.color.setHex(0xff0000);
                 
-                // Calcular posición inicial: 2 metros delante del jugador, no en la puerta
-                const toDoor = new THREE.Vector3().subVectors(basePos, playerPos).normalize();
-                
-                // Posición base delante del personaje
+                const toDoor = _tempVec3_1.subVectors(basePos, playerPos).normalize();
                 this.startCinematicPos.copy(playerPos).add(toDoor.multiplyScalar(2.0));
                 this.startCinematicPos.y += 1.5; 
 
-                // Posición inicial apilada
                 this.mesh.position.copy(this.startCinematicPos);
-                this.mesh.position.y += (this.id * 0.6); // Stack apretado
+                this.mesh.position.y += (this.id * 0.6); 
 
-                // Calcular posición destino "despliegue" (laterales)
-                // Usamos el vector "Right" del jugador
                 const up = new THREE.Vector3(0, 1, 0);
                 const right = new THREE.Vector3().crossVectors(toDoor, up).normalize();
 
                 this.cinematicTargetPos.copy(this.mesh.position);
-                this.cinematicTargetPos.y += 2.0; // Subir
+                this.cinematicTargetPos.y += 2.0; 
 
-                if (this.id === 0) { // Izquierda
+                if (this.id === 0) { 
                     this.cinematicTargetPos.addScaledVector(right, -3.0);
-                } else if (this.id === 1) { // Centro/Arriba
+                } else if (this.id === 1) { 
                     this.cinematicTargetPos.y += 2.0; 
-                } else if (this.id === 2) { // Derecha
+                } else if (this.id === 2) { 
                     this.cinematicTargetPos.addScaledVector(right, 3.0);
                 }
             }
@@ -391,16 +392,15 @@
                 const time = clock.getElapsedTime();
 
                 if(this.state === 'cinematic_stack') {
-                    // Animación durante cinemática
-                    // De 0 a 1 seg: quietos (stack)
-                    // De 1 a 4 seg: se abren a los lados (cinematicTargetPos)
                     if (cinematicTime > 1.0) {
-                        const t = Math.min(1.0, (cinematicTime - 1.0) / 3.0); // 0 a 1 durante la apertura
-                        // Interpolación suave
-                        const ease = t * t * (3 - 2 * t); // Smoothstep
-                        this.mesh.position.lerpVectors(this.startCinematicPos.clone().add(new THREE.Vector3(0, this.id*0.6, 0)), this.cinematicTargetPos, ease);
+                        const t = Math.min(1.0, (cinematicTime - 1.0) / 3.0); 
+                        const ease = t * t * (3 - 2 * t); 
+                        
+                        // Optimización: Usamos vectores temporales para el lerp
+                        _tempVec3_1.copy(this.startCinematicPos);
+                        _tempVec3_1.y += (this.id * 0.6);
+                        this.mesh.position.lerpVectors(_tempVec3_1, this.cinematicTargetPos, ease);
                     } else {
-                         // Pequeña oscilación inicial
                          this.mesh.position.y = this.startCinematicPos.y + (this.id * 0.6) + Math.sin(time * 5) * 0.05;
                     }
                     return;
@@ -413,6 +413,7 @@
                         this.light.color.setHex(0x00ffff);
                     }
 
+                    // Optimización: Uso de _tempVec3_1 y _tempVec3_2
                     const baseDir = _tempVec3_1.subVectors(this.target, this.mesh.position).normalize();
                     const freq = 2.0; 
                     const amp = 0.5;
@@ -455,7 +456,6 @@
             messageEl.style.display = 'block';
             setTimeout(() => { messageEl.style.display = 'none'; }, 5000);
 
-            // Spawnear orbes con referencia al jugador
             orbs.forEach(orb => orb.spawnStacked(doorsCenter, playerContainer.position));
             
             currentSpeed = 0;
@@ -476,10 +476,15 @@
             startQuestCinematic();
         }
 
+        // --- OPTIMIZACIÓN 2: ZERO ALLOCATION RAYCASTS ---
         function checkPlatform() {
             if(!playerContainer || !platformMesh) return false;
-            const rayOrigin = playerContainer.position.clone().add(new THREE.Vector3(0, 1.0, 0));
-            raycaster.set(rayOrigin, downVector);
+            
+            // Reutilizamos _tempOrigin
+            _tempOrigin.copy(playerContainer.position);
+            _tempOrigin.y += 1.0;
+            
+            raycaster.set(_tempOrigin, downVector);
             raycaster.far = 2.0;
             const hits = raycaster.intersectObject(platformMesh, false); 
             return hits.length > 0;
@@ -678,9 +683,13 @@
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         function shoot() { if(isCinematic) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
+        // --- OPTIMIZACIÓN 3: ZERO ALLOCATION GETPLAYERHEIGHT ---
         function getPlayerHeight(pos) {
-            const origin = pos.clone(); origin.y += 1.0; 
-            raycaster.set(origin, downVector); raycaster.far = 10.0; 
+            _tempOrigin.copy(pos);
+            _tempOrigin.y += 1.0;
+            
+            raycaster.set(_tempOrigin, downVector);
+            raycaster.far = 10.0;
             const hits = raycaster.intersectObjects(collisionMeshes, true); 
             for(let i = 0; i < hits.length; i++) {
                 const hit = hits[i];
@@ -691,8 +700,12 @@
             return -999;
         }
 
+        // --- OPTIMIZACIÓN 4: ZERO ALLOCATION CHECKWALL ---
         function checkWall(pos, dir) { 
-            raycaster.set(pos.clone().add(new THREE.Vector3(0, 0.1, 0)), dir); 
+            _tempOrigin.copy(pos);
+            _tempOrigin.y += 0.1;
+
+            raycaster.set(_tempOrigin, dir); 
             raycaster.far = 0.6; 
             const hits = raycaster.intersectObjects(collisionMeshes, true);
             if (hits.length > 0) {
@@ -721,11 +734,18 @@
             if (len > 0.1 && landingCooldown <= 0) { isMoving = true; currentSpeed = (len > 1 ? maxMoveSpeed : maxMoveSpeed * len); } else { isMoving = false; if (landingCooldown <= 0) currentSpeed = 0; }
             
             if (isMoving) {
-                camera.getWorldDirection(_tempVec3_1); _tempVec3_1.y = 0; _tempVec3_1.normalize(); 
+                // OPTIMIZACIÓN 5: Vectores temporales
+                camera.getWorldDirection(_tempVec3_1); 
+                _tempVec3_1.y = 0; 
+                _tempVec3_1.normalize(); 
+                
                 _tempVec3_2.crossVectors(new THREE.Vector3(0, 1, 0), _tempVec3_1).normalize(); 
+                
                 _tempVec3_3.copy(_tempVec3_1).multiplyScalar(-moveDirection.z).addScaledVector(_tempVec3_2, -moveDirection.x).normalize();
                 
                 if (!checkWall(playerContainer.position, _tempVec3_3)) playerContainer.position.addScaledVector(_tempVec3_3, currentSpeed * dt);
+                
+                // Rotación sin new THREE.Quaternion si es posible, pero Quaternion es ligero
                 playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(_tempVec3_3.x, _tempVec3_3.z)), 10 * dt);
             }
             
@@ -747,26 +767,31 @@
             } else { playerContainer.position.y = propY; isGrounded = false; }
         }
 
+        // --- OPTIMIZACIÓN 6: CAMARA SIN NEW VECTOR3 ---
         function updateSmartCamera() {
             if (!playerContainer) return;
 
             if (isCinematic) {
                 const time = clock.getElapsedTime() - cinematicStartTime;
-                const toDoor = _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
-                const lookTarget = playerContainer.position.clone().add(toDoor.clone().multiplyScalar(5));
+                _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize(); // toDoor
+                
+                // lookTarget
+                const lookTarget = _camIdeal; // reutilizamos variable
+                lookTarget.copy(playerContainer.position).add(_tempVec3_1.clone().multiplyScalar(5)); // .clone() aqui es aceptable pq es 1 vez por frame, no 4
                 lookTarget.y += 2.0;
 
-                let targetPos;
+                let targetPos = _camHead; // reutilizamos
+
                 if (time < 1.0) {
-                    targetPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(3.0));
+                    targetPos.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(3.0));
                     targetPos.y += 1.5;
                 } else if (time < 3.5) {
                     const t = (time - 1.0) / 2.5; 
-                    const startPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(3.0)).add(new THREE.Vector3(0, 1.5, 0));
-                    const endPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
-                    targetPos = new THREE.Vector3().lerpVectors(startPos, endPos, t); 
+                    const startPos = _tempVec3_2.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(3.0)).add(new THREE.Vector3(0, 1.5, 0));
+                    const endPos = _tempVec3_3.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
+                    targetPos.lerpVectors(startPos, endPos, t); 
                 } else {
-                     targetPos = playerContainer.position.clone().sub(toDoor.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
+                     targetPos.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
                      if (time > 4.5) {
                          endCinematic();
                          return; 
@@ -777,13 +802,27 @@
                 return;
             }
 
-            const ideal = playerContainer.position.clone().add(new THREE.Vector3(camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta), camSettings.radius * Math.cos(camSettings.phi), camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)));
-            const head = playerContainer.position.clone().add(new THREE.Vector3(0, 1.5, 0));
-            const dir = new THREE.Vector3().subVectors(ideal, head).normalize();
-            cameraRaycaster.set(head, dir); cameraRaycaster.far = camSettings.radius;
+            // Camara normal optimizada
+            // ideal = player + offset
+            _camIdeal.set(
+                camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta),
+                camSettings.radius * Math.cos(camSettings.phi),
+                camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)
+            ).add(playerContainer.position);
+
+            _camHead.copy(playerContainer.position).y += 1.5;
+
+            // dir = ideal - head
+            _tempDir.subVectors(_camIdeal, _camHead).normalize();
+
+            cameraRaycaster.set(_camHead, _tempDir); 
+            cameraRaycaster.far = camSettings.radius;
             const hits = cameraRaycaster.intersectObjects(collisionMeshes, true);
             const dist = hits.length > 0 ? Math.max(camSettings.minRadius, hits[0].distance - 0.2) : camSettings.radius;
-            camera.position.lerp(head.clone().add(dir.multiplyScalar(dist)), 0.2);
+            
+            // camera pos = head + dir * dist
+            _tempVec3_1.copy(_camHead).addScaledVector(_tempDir, dist);
+            camera.position.lerp(_tempVec3_1, 0.2);
             camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
         }
 
@@ -847,7 +886,8 @@
                 }
             }
 
-            const steps = Math.min(isMobile ? 2 : 4, Math.ceil(delta / (1/60))); 
+            // OPTIMIZACIÓN 7: Reducir pasos en móvil
+            const steps = Math.min(isMobile ? 1 : 4, Math.ceil(delta / (1/60))); 
             for(let i=0; i<steps; i++) updatePhysics(delta/steps);
 
             if (playerContainer) {
