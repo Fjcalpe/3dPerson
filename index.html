@@ -7,7 +7,7 @@ fullContent:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Emitter & Collision Separation</title>
+    <title>Juego 3D - Butter Smooth Physics</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -144,6 +144,9 @@ fullContent:
         const _tempDir = new THREE.Vector3();
         const _camIdeal = new THREE.Vector3();
         const _camHead = new THREE.Vector3();
+        // Nueva variable para suavizar la rotación de cámara
+        const _currentLookAt = new THREE.Vector3(); 
+        let isLookAtInitialized = false;
 
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -157,9 +160,8 @@ fullContent:
         const fpsDisplay = document.getElementById('fps-display');
         const messageEl = document.getElementById('quest-message');
 
-        // SEPARACIÓN DE ROLES
-        const collisionMeshes = [];      // Solo para caminar/chocar
-        const grassEmitterMeshes = [];   // Solo para generar hierba
+        const collisionMeshes = [];      
+        const grassEmitterMeshes = [];   
         
         let platformMesh = null; 
         let parametricMesh = null;
@@ -512,7 +514,6 @@ fullContent:
             if (!grassSource.geometry || !grassSource.material) return;
             if (grassParams.count === 0) return;
 
-            // Si no hay emisores de hierba, no hacemos nada
             if (grassEmitterMeshes.length === 0) {
                 console.warn("No 'emisor_hierba' found. Skipping grass.");
                 return;
@@ -552,13 +553,11 @@ fullContent:
                 
                 localRaycaster.set(_tempVec3_1, localDown);
                 
-                // RAYCAST EXCLUSIVO CONTRA EMISORES DE HIERBA
                 const hits = localRaycaster.intersectObjects(grassEmitterMeshes, true);
                 
                 if (hits.length === 0) continue;
                 
                 const hit = hits[0];
-                // Comprobación extra: que mire hacia arriba
                 if (hit.face && hit.face.normal.y < 0.6) continue;
 
                 dummy.position.set(x, hit.point.y, z);
@@ -597,7 +596,6 @@ fullContent:
                 if (child.isMesh) {
                     const name = child.name.toLowerCase();
                     
-                    // 1. COLLISION MESHES
                     if (name.includes("collision") || name.includes("colision")) {
                         collisionMeshes.push(child);
                         child.visible = false; 
@@ -610,12 +608,10 @@ fullContent:
                         box.applyMatrix4(child.matrixWorld);
                         mapBoundingBox.union(box);
 
-                    // 2. GRASS EMITTERS (NUEVO)
                     } else if (name.includes("emisor_hierba")) {
                         grassEmitterMeshes.push(child);
-                        child.visible = false; // El emisor no se ve, solo genera hierba
+                        child.visible = false; 
 
-                    // 3. VISUAL ELEMENTS
                     } else if (name.includes("hierba_b")) {
                         if (!grassSource.geometry) {
                             grassSource.geometry = child.geometry.clone(); 
@@ -668,22 +664,17 @@ fullContent:
         function shoot() { if(isCinematic) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
         function getPlayerHeight(pos, currentY) {
-            // FIX ANTI-TIRONES: Pasamos la Y actual
             if(velocityY > 0) return -999;
             _tempOrigin.copy(pos);
             _tempOrigin.y += 1.5; 
             raycaster.set(_tempOrigin, downVector);
             raycaster.far = 10.0;
             
-            // FÍSICA LIMPIA: Solo comprueba contra collisionMeshes
             const hits = raycaster.intersectObjects(collisionMeshes, true); 
             if (hits.length > 0) {
                 return hits[0].point.y;
             }
             
-            // COYOTE MEMORY: Si no detectamos suelo pero estábamos en el suelo hace nada...
-            // asumimos que es una pequeña grieta del mesh y devolvemos la altura actual
-            // para evitar el "snap" hacia abajo.
             if (isGrounded && currentY > -100) {
                 return currentY; 
             }
@@ -743,7 +734,6 @@ fullContent:
             velocityY += gravity * dt; 
             const propY = playerContainer.position.y + velocityY * dt; 
             
-            // Enviamos la posición actual para el fix de Coyote Memory
             const floorY = getPlayerHeight(playerContainer.position, playerContainer.position.y);
             
             if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
@@ -752,10 +742,13 @@ fullContent:
 
             if (floorY > -900) {
                 if (isGrounded && distToFloor > 0 && distToFloor < 0.5 && velocityY <= 0) {
-                     playerContainer.position.y = floorY; velocityY = 0; isGrounded = true;
+                     // SOFT LANDING FIX: Lerp en lugar de set directo para suavizar triangulación
+                     playerContainer.position.y = THREE.MathUtils.lerp(playerContainer.position.y, floorY, 0.5);
+                     velocityY = 0; isGrounded = true;
                 } else if (propY <= floorY && velocityY <= 0) { 
                     if (!isGrounded && !isCinematic) landingCooldown = 0.2; 
-                    playerContainer.position.y = floorY; velocityY = 0; isGrounded = true; 
+                    playerContainer.position.y = THREE.MathUtils.lerp(playerContainer.position.y, floorY, 0.5);
+                    velocityY = 0; isGrounded = true; 
                 } else { 
                     playerContainer.position.y = propY; isGrounded = false; 
                 }
@@ -769,6 +762,7 @@ fullContent:
             if (!playerContainer) return;
 
             if (isCinematic) {
+                // ... (código cinemático igual) ...
                 const time = clock.getElapsedTime() - cinematicStartTime;
                 _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
                 
@@ -825,9 +819,21 @@ fullContent:
             
             _camHead.copy(playerContainer.position).y += 1.5; 
             
-            // Suavizado extra para evitar vibración de cámara
+            // 1. Suavizado de POSICIÓN de cámara
             camera.position.lerp(_camIdeal, 0.1);
-            camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
+
+            // 2. Suavizado de ROTACIÓN (LookAt)
+            // Esto evita que la cámara vibre si el personaje vibra verticalmente
+            const targetLook = _tempVec3_3.copy(playerContainer.position);
+            targetLook.y += 1.5;
+
+            if (!isLookAtInitialized) {
+                _currentLookAt.copy(targetLook);
+                isLookAtInitialized = true;
+            }
+
+            _currentLookAt.lerp(targetLook, 0.1); // El secreto de la suavidad
+            camera.lookAt(_currentLookAt);
         }
 
         function animate() {
@@ -890,8 +896,12 @@ fullContent:
                 }
             }
 
-            const steps = isMobile ? 1 : Math.min(4, Math.ceil(delta / (1/60))); 
-            for(let i=0; i<steps; i++) updatePhysics(delta/steps);
+            // CORRECCIÓN DE TIRONES: FÍSICAS DE PASO FIJO (3 PASOS)
+            // Esto elimina la fluctuación cuando los FPS no son estables.
+            const fixedSteps = 3; 
+            for(let i=0; i<fixedSteps; i++) {
+                updatePhysics(delta/fixedSteps);
+            }
 
             if (playerContainer) {
                 if (mixer) { mixer.timeScale = (isGrounded && isMoving && !isCinematic) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
