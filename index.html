@@ -1,9 +1,13 @@
+{
+type: uploaded file
+fileName: index.html
+fullContent:
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Final Clean</title>
+    <title>Juego 3D - Strict Physics</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -149,6 +153,7 @@
         const clock = new THREE.Clock();
         let lastTime = performance.now();
         let frames = 0;
+        let frameCount = 0; 
         const fpsDisplay = document.getElementById('fps-display');
         const messageEl = document.getElementById('quest-message');
 
@@ -179,6 +184,8 @@
             grassParams.count = val;
             if(grassSource.geometry) generateInstancedGrass();
         });
+
+        const orbSpeedMultiplier = 0.2;
 
         const maxMoveSpeed = 11.0; 
         let currentSpeed = 0;
@@ -316,10 +323,11 @@
                 this.mesh.add(this.light);
                 scene.add(this.mesh);
                 this.state = 'hidden'; 
+                this.mesh.position.set(0, -9999, 0); 
                 this.velocity = new THREE.Vector3();
                 this.target = new THREE.Vector3();
                 this.collected = false;
-                this.mesh.visible = false;
+                this.mesh.visible = true; 
                 this.spawnTime = 0;
                 this.oscillationOffset = Math.random() * 100;
                 this.startCinematicPos = new THREE.Vector3();
@@ -327,7 +335,6 @@
             }
 
             spawnStacked(basePos, playerPos) {
-                this.mesh.visible = true;
                 this.state = 'cinematic_stack';
                 this.collected = false;
                 this.mesh.material.color.setHex(0xff0000);
@@ -405,8 +412,7 @@
                     
                     baseDir.normalize();
 
-                    // FIXED SPEED 0.2
-                    const speed = 8 * 0.2; 
+                    const speed = 8 * orbSpeedMultiplier; 
                     this.mesh.position.addScaledVector(baseDir, speed * dt);
 
                     if(this.mesh.position.distanceTo(this.target) < 2.0) {
@@ -597,12 +603,14 @@
                     }
 
                     if (name.includes("colision") || name.includes("collision") || name.includes("suelo") || name.includes("consola_mirador")) {
+                        
                         if (name.includes("consola_mirador_colision_plataforma")) {
                             platformMesh = child;
                             child.visible = false;
                             collisionMeshes.push(child);
                             return;
                         }
+
                         if (name.includes("consola_mirador_colision")) {
                              collisionMeshes.push(child);
                              child.visible = false; 
@@ -611,8 +619,10 @@
                         if (name.includes("consola_mirador_escaleras")) {
                              return;
                         }
+
                         collisionMeshes.push(child);
                         if(name.includes("colision")) child.visible = false;
+
                         if(name.includes("suelo")) {
                             child.geometry.computeBoundingBox();
                             const box = child.geometry.boundingBox.clone();
@@ -656,6 +666,7 @@
         function shoot() { if(isCinematic) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
         function getPlayerHeight(pos) {
+            if(velocityY > 0) return -999;
             _tempOrigin.copy(pos);
             _tempOrigin.y += 1.0;
             raycaster.set(_tempOrigin, downVector);
@@ -684,32 +695,45 @@
 
         function updatePhysics(dt) {
             if (!playerContainer) return;
-            if (isCinematic) {
-                currentSpeed = 0;
-                velocityY += gravity * dt;
-                const propY = playerContainer.position.y + velocityY * dt;
-                const floorY = getPlayerHeight(playerContainer.position);
-                if (propY <= floorY) { playerContainer.position.y = floorY; velocityY = 0; }
-                else { playerContainer.position.y = propY; }
-                return;
-            }
+            
+            // FÍSICA UNIFICADA: Incluso en cinemática, usamos el cálculo real de suelo
+            // Simplemente anulamos el input del usuario.
+            
+            let inputX = 0;
+            let inputY = 0;
 
-            if (landingCooldown > 0) { landingCooldown -= dt; currentSpeed = 0; }
-            let ix = joystickVector.x; let iy = joystickVector.y;
-            if (keyStates.w) iy -= 1; if (keyStates.s) iy += 1; if (keyStates.a) ix -= 1; if (keyStates.d) ix += 1;
-            
-            moveDirection.set(ix, 0, iy); const len = moveDirection.length();
-            if (len > 0.1 && landingCooldown <= 0) { isMoving = true; currentSpeed = (len > 1 ? maxMoveSpeed : maxMoveSpeed * len); } else { isMoving = false; if (landingCooldown <= 0) currentSpeed = 0; }
-            
-            if (isMoving) {
-                camera.getWorldDirection(_tempVec3_1); _tempVec3_1.y = 0; _tempVec3_1.normalize(); 
-                _tempVec3_2.crossVectors(new THREE.Vector3(0, 1, 0), _tempVec3_1).normalize(); 
-                _tempVec3_3.copy(_tempVec3_1).multiplyScalar(-moveDirection.z).addScaledVector(_tempVec3_2, -moveDirection.x).normalize();
-                
-                if (!checkWall(playerContainer.position, _tempVec3_3)) playerContainer.position.addScaledVector(_tempVec3_3, currentSpeed * dt);
-                playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(_tempVec3_3.x, _tempVec3_3.z)), 10 * dt);
+            if (!isCinematic) {
+                if (landingCooldown > 0) { landingCooldown -= dt; }
+                inputX = joystickVector.x; 
+                inputY = joystickVector.y;
+                if (keyStates.w) inputY -= 1; if (keyStates.s) inputY += 1; if (keyStates.a) inputX -= 1; if (keyStates.d) inputX += 1;
+            } else {
+                currentSpeed = 0; // En cinemática forzamos quieto
+                isMoving = false;
             }
             
+            if (!isCinematic) {
+                moveDirection.set(inputX, 0, inputY); 
+                const len = moveDirection.length();
+                if (len > 0.1 && landingCooldown <= 0) { 
+                    isMoving = true; 
+                    currentSpeed = (len > 1 ? maxMoveSpeed : maxMoveSpeed * len); 
+                } else { 
+                    isMoving = false; 
+                    if (landingCooldown <= 0) currentSpeed = 0; 
+                }
+                
+                if (isMoving) {
+                    camera.getWorldDirection(_tempVec3_1); _tempVec3_1.y = 0; _tempVec3_1.normalize(); 
+                    _tempVec3_2.crossVectors(new THREE.Vector3(0, 1, 0), _tempVec3_1).normalize(); 
+                    _tempVec3_3.copy(_tempVec3_1).multiplyScalar(-moveDirection.z).addScaledVector(_tempVec3_2, -moveDirection.x).normalize();
+                    
+                    if (!checkWall(playerContainer.position, _tempVec3_3)) playerContainer.position.addScaledVector(_tempVec3_3, currentSpeed * dt);
+                    playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(_tempVec3_3.x, _tempVec3_3.z)), 10 * dt);
+                }
+            }
+            
+            // Gravedad siempre activa
             velocityY += gravity * dt; 
             const propY = playerContainer.position.y + velocityY * dt; 
             const floorY = getPlayerHeight(playerContainer.position);
@@ -717,15 +741,22 @@
             if (blobShadow) { blobShadow.visible = floorY > -500; if(blobShadow.visible) blobShadow.position.set(playerContainer.position.x, floorY + 0.05, playerContainer.position.z); }
             
             const distToFloor = playerContainer.position.y - floorY;
-            if (isGrounded && distToFloor > 0 && distToFloor < 0.5 && velocityY <= 0) {
-                 playerContainer.position.y = floorY; velocityY = 0; isGrounded = true;
-            } else if (propY <= floorY && velocityY <= 0) { 
-                if (!isGrounded) landingCooldown = 0.2; 
-                playerContainer.position.y = floorY; velocityY = 0; isGrounded = true; 
-            } else if (propY <= 0) { 
-                if (!isGrounded) landingCooldown = 0.2; 
-                playerContainer.position.y = 0; velocityY = 0; isGrounded = true; 
-            } else { playerContainer.position.y = propY; isGrounded = false; }
+
+            // Lógica de aterrizaje estricta: Solo si floorY es válido (> -900)
+            if (floorY > -900) {
+                if (isGrounded && distToFloor > 0 && distToFloor < 0.5 && velocityY <= 0) {
+                     playerContainer.position.y = floorY; velocityY = 0; isGrounded = true;
+                } else if (propY <= floorY && velocityY <= 0) { 
+                    if (!isGrounded && !isCinematic) landingCooldown = 0.2; 
+                    playerContainer.position.y = floorY; velocityY = 0; isGrounded = true; 
+                } else { 
+                    playerContainer.position.y = propY; isGrounded = false; 
+                }
+            } else {
+                // Si no hay suelo detectado por Raycast, CAEMOS (incluso bajo 0)
+                playerContainer.position.y = propY; 
+                isGrounded = false;
+            }
         }
 
         function updateSmartCamera() {
@@ -761,22 +792,34 @@
                 return;
             }
 
+            frameCount++;
+            if (frameCount % 3 === 0) {
+                _camIdeal.set(
+                    camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta),
+                    camSettings.radius * Math.cos(camSettings.phi),
+                    camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)
+                ).add(playerContainer.position);
+
+                _camHead.copy(playerContainer.position).y += 1.5;
+                _tempDir.subVectors(_camIdeal, _camHead).normalize();
+
+                cameraRaycaster.set(_camHead, _tempDir); 
+                cameraRaycaster.far = camSettings.radius;
+                const hits = cameraRaycaster.intersectObjects(collisionMeshes, true);
+                const dist = hits.length > 0 ? Math.max(camSettings.minRadius, hits[0].distance - 0.2) : camSettings.radius;
+                
+                camSettings.currentRadius = dist; 
+            }
+
             _camIdeal.set(
-                camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta),
-                camSettings.radius * Math.cos(camSettings.phi),
-                camSettings.radius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)
+                camSettings.currentRadius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta),
+                camSettings.currentRadius * Math.cos(camSettings.phi),
+                camSettings.currentRadius * Math.sin(camSettings.phi) * Math.cos(camSettings.theta)
             ).add(playerContainer.position);
-
-            _camHead.copy(playerContainer.position).y += 1.5;
-            _tempDir.subVectors(_camIdeal, _camHead).normalize();
-
-            cameraRaycaster.set(_camHead, _tempDir); 
-            cameraRaycaster.far = camSettings.radius;
-            const hits = cameraRaycaster.intersectObjects(collisionMeshes, true);
-            const dist = hits.length > 0 ? Math.max(camSettings.minRadius, hits[0].distance - 0.2) : camSettings.radius;
             
-            _tempVec3_1.copy(_camHead).addScaledVector(_tempDir, dist);
-            camera.position.lerp(_tempVec3_1, 0.2);
+            _camHead.copy(playerContainer.position).y += 1.5; 
+            
+            camera.position.lerp(_camIdeal, 0.2);
             camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
         }
 
@@ -840,7 +883,7 @@
                 }
             }
 
-            const steps = Math.min(isMobile ? 1 : 4, Math.ceil(delta / (1/60))); 
+            const steps = isMobile ? 1 : Math.min(4, Math.ceil(delta / (1/60))); 
             for(let i=0; i<steps; i++) updatePhysics(delta/steps);
 
             if (playerContainer) {
@@ -869,3 +912,4 @@
     </script>
 </body>
 </html>
+}
