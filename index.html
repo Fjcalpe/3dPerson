@@ -7,7 +7,7 @@ fullContent:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Butter Smooth Physics</title>
+    <title>Juego 3D - Speed Balanced</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -144,7 +144,6 @@ fullContent:
         const _tempDir = new THREE.Vector3();
         const _camIdeal = new THREE.Vector3();
         const _camHead = new THREE.Vector3();
-        // Nueva variable para suavizar la rotación de cámara
         const _currentLookAt = new THREE.Vector3(); 
         let isLookAtInitialized = false;
 
@@ -192,7 +191,9 @@ fullContent:
 
         const orbSpeedMultiplier = 0.2;
 
-        const maxMoveSpeed = 11.0; 
+        // AJUSTE DE VELOCIDAD: De 11.0 a 7.5 para que la cámara pueda seguirlo
+        const maxMoveSpeed = 7.5; 
+        
         let currentSpeed = 0;
         let moveDirection = new THREE.Vector3();
         let isMoving = false;
@@ -742,7 +743,6 @@ fullContent:
 
             if (floorY > -900) {
                 if (isGrounded && distToFloor > 0 && distToFloor < 0.5 && velocityY <= 0) {
-                     // SOFT LANDING FIX: Lerp en lugar de set directo para suavizar triangulación
                      playerContainer.position.y = THREE.MathUtils.lerp(playerContainer.position.y, floorY, 0.5);
                      velocityY = 0; isGrounded = true;
                 } else if (propY <= floorY && velocityY <= 0) { 
@@ -762,7 +762,6 @@ fullContent:
             if (!playerContainer) return;
 
             if (isCinematic) {
-                // ... (código cinemático igual) ...
                 const time = clock.getElapsedTime() - cinematicStartTime;
                 _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
                 
@@ -819,11 +818,9 @@ fullContent:
             
             _camHead.copy(playerContainer.position).y += 1.5; 
             
-            // 1. Suavizado de POSICIÓN de cámara
-            camera.position.lerp(_camIdeal, 0.1);
+            // AJUSTE CÁMARA: De 0.1 a 0.15 para que persiga más rápido
+            camera.position.lerp(_camIdeal, 0.15);
 
-            // 2. Suavizado de ROTACIÓN (LookAt)
-            // Esto evita que la cámara vibre si el personaje vibra verticalmente
             const targetLook = _tempVec3_3.copy(playerContainer.position);
             targetLook.y += 1.5;
 
@@ -832,7 +829,7 @@ fullContent:
                 isLookAtInitialized = true;
             }
 
-            _currentLookAt.lerp(targetLook, 0.1); // El secreto de la suavidad
+            _currentLookAt.lerp(targetLook, 0.15); 
             camera.lookAt(_currentLookAt);
         }
 
@@ -896,8 +893,6 @@ fullContent:
                 }
             }
 
-            // CORRECCIÓN DE TIRONES: FÍSICAS DE PASO FIJO (3 PASOS)
-            // Esto elimina la fluctuación cuando los FPS no son estables.
             const fixedSteps = 3; 
             for(let i=0; i<fixedSteps; i++) {
                 updatePhysics(delta/fixedSteps);
