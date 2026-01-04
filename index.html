@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Zero Allocation Fix</title>
+    <title>Juego 3D - Final Clean</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -43,7 +43,7 @@
             border-radius: 8px; color: white; font-size: 12px;
             z-index: 200; backdrop-filter: blur(4px);
             display: flex; flex-direction: column; gap: 5px;
-            width: 180px;
+            width: 150px;
         }
         #settings-ui label { font-weight: bold; display: flex; justify-content: space-between; }
         input[type=range] { width: 100%; cursor: pointer; }
@@ -100,10 +100,8 @@
     <div id="quest-message">WORK AND BE PATIENT</div>
     
     <div id="settings-ui" class="ui-element">
-        <label>Densidad Hierba <span id="grass-val">20000</span></label>
-        <input type="range" id="grass-slider" min="0" max="50000" step="100" value="20000">
-        <label style="margin-top:10px;">Velocidad Orbes <span id="orb-speed-val">1.0</span></label>
-        <input type="range" id="orb-speed-slider" min="0.1" max="3.0" step="0.1" value="1.0">
+        <label>Densidad Hierba <span id="grass-val">2000</span></label>
+        <input type="range" id="grass-slider" min="0" max="4000" step="100" value="2000">
     </div>
 
     <div id="error-log"></div>
@@ -135,15 +133,13 @@
             el.innerHTML += "Error: " + e.message + "<br>";
         });
 
-        // --- OPTIMIZACIÓN 1: VECTORES REUTILIZABLES ---
-        // Nunca crearemos new THREE.Vector3() dentro del bucle de juego
         const _tempVec3_1 = new THREE.Vector3();
         const _tempVec3_2 = new THREE.Vector3();
         const _tempVec3_3 = new THREE.Vector3();
-        const _tempOrigin = new THREE.Vector3(); // Para raycasts
-        const _tempDir = new THREE.Vector3();    // Para raycasts
-        const _camIdeal = new THREE.Vector3();   // Para camara
-        const _camHead = new THREE.Vector3();    // Para camara
+        const _tempOrigin = new THREE.Vector3();
+        const _tempDir = new THREE.Vector3();
+        const _camIdeal = new THREE.Vector3();
+        const _camHead = new THREE.Vector3();
 
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -175,22 +171,13 @@
 
         const grassSlider = document.getElementById('grass-slider');
         const grassValLabel = document.getElementById('grass-val');
-        const grassParams = { count: 20000 };
+        const grassParams = { count: 2000 };
 
         grassSlider.addEventListener('input', (e) => {
             const val = parseInt(e.target.value);
             grassValLabel.innerText = val;
             grassParams.count = val;
             if(grassSource.geometry) generateInstancedGrass();
-        });
-
-        let orbSpeedMultiplier = 1.0;
-        const orbSpeedSlider = document.getElementById('orb-speed-slider');
-        const orbSpeedValLabel = document.getElementById('orb-speed-val');
-        
-        orbSpeedSlider.addEventListener('input', (e) => {
-            orbSpeedMultiplier = parseFloat(e.target.value);
-            orbSpeedValLabel.innerText = orbSpeedMultiplier.toFixed(1);
         });
 
         const maxMoveSpeed = 11.0; 
@@ -318,7 +305,6 @@
         scene.add(sunLight); scene.add(sunLight.target); 
         scene.add(new THREE.HemisphereLight(0xffd580, 0x222233, 0.5));
 
-        // --- ORB CLASS ---
         class Orb {
             constructor(id) {
                 this.id = id;
@@ -344,7 +330,6 @@
                 this.mesh.visible = true;
                 this.state = 'cinematic_stack';
                 this.collected = false;
-                
                 this.mesh.material.color.setHex(0xff0000);
                 this.light.color.setHex(0xff0000);
                 
@@ -395,8 +380,6 @@
                     if (cinematicTime > 1.0) {
                         const t = Math.min(1.0, (cinematicTime - 1.0) / 3.0); 
                         const ease = t * t * (3 - 2 * t); 
-                        
-                        // Optimización: Usamos vectores temporales para el lerp
                         _tempVec3_1.copy(this.startCinematicPos);
                         _tempVec3_1.y += (this.id * 0.6);
                         this.mesh.position.lerpVectors(_tempVec3_1, this.cinematicTargetPos, ease);
@@ -413,7 +396,6 @@
                         this.light.color.setHex(0x00ffff);
                     }
 
-                    // Optimización: Uso de _tempVec3_1 y _tempVec3_2
                     const baseDir = _tempVec3_1.subVectors(this.target, this.mesh.position).normalize();
                     const freq = 2.0; 
                     const amp = 0.5;
@@ -423,7 +405,8 @@
                     
                     baseDir.normalize();
 
-                    const speed = 8 * orbSpeedMultiplier; 
+                    // FIXED SPEED 0.2
+                    const speed = 8 * 0.2; 
                     this.mesh.position.addScaledVector(baseDir, speed * dt);
 
                     if(this.mesh.position.distanceTo(this.target) < 2.0) {
@@ -437,13 +420,9 @@
                         questOrbsCollected++;
                     }
                 }
-                else if (this.state === 'following') {
-                    // Logic handled outside
-                }
             }
         }
 
-        // --- QUEST & CINEMATIC LOGIC ---
         function startQuestCinematic() {
             if(isCinematic) return; 
             
@@ -476,14 +455,10 @@
             startQuestCinematic();
         }
 
-        // --- OPTIMIZACIÓN 2: ZERO ALLOCATION RAYCASTS ---
         function checkPlatform() {
             if(!playerContainer || !platformMesh) return false;
-            
-            // Reutilizamos _tempOrigin
             _tempOrigin.copy(playerContainer.position);
             _tempOrigin.y += 1.0;
-            
             raycaster.set(_tempOrigin, downVector);
             raycaster.far = 2.0;
             const hits = raycaster.intersectObject(platformMesh, false); 
@@ -590,6 +565,7 @@
         }
 
         const gltfLoader = new GLTFLoader();
+        
         gltfLoader.load('./MN_SCENE_01.gltf', function (gltf) {
             const masterModule = gltf.scene;
             scene.add(masterModule);
@@ -621,14 +597,12 @@
                     }
 
                     if (name.includes("colision") || name.includes("collision") || name.includes("suelo") || name.includes("consola_mirador")) {
-                        
                         if (name.includes("consola_mirador_colision_plataforma")) {
                             platformMesh = child;
                             child.visible = false;
                             collisionMeshes.push(child);
                             return;
                         }
-
                         if (name.includes("consola_mirador_colision")) {
                              collisionMeshes.push(child);
                              child.visible = false; 
@@ -637,10 +611,8 @@
                         if (name.includes("consola_mirador_escaleras")) {
                              return;
                         }
-
                         collisionMeshes.push(child);
                         if(name.includes("colision")) child.visible = false;
-
                         if(name.includes("suelo")) {
                             child.geometry.computeBoundingBox();
                             const box = child.geometry.boundingBox.clone();
@@ -683,11 +655,9 @@
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         function shoot() { if(isCinematic) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
-        // --- OPTIMIZACIÓN 3: ZERO ALLOCATION GETPLAYERHEIGHT ---
         function getPlayerHeight(pos) {
             _tempOrigin.copy(pos);
             _tempOrigin.y += 1.0;
-            
             raycaster.set(_tempOrigin, downVector);
             raycaster.far = 10.0;
             const hits = raycaster.intersectObjects(collisionMeshes, true); 
@@ -700,11 +670,9 @@
             return -999;
         }
 
-        // --- OPTIMIZACIÓN 4: ZERO ALLOCATION CHECKWALL ---
         function checkWall(pos, dir) { 
             _tempOrigin.copy(pos);
             _tempOrigin.y += 0.1;
-
             raycaster.set(_tempOrigin, dir); 
             raycaster.far = 0.6; 
             const hits = raycaster.intersectObjects(collisionMeshes, true);
@@ -734,18 +702,11 @@
             if (len > 0.1 && landingCooldown <= 0) { isMoving = true; currentSpeed = (len > 1 ? maxMoveSpeed : maxMoveSpeed * len); } else { isMoving = false; if (landingCooldown <= 0) currentSpeed = 0; }
             
             if (isMoving) {
-                // OPTIMIZACIÓN 5: Vectores temporales
-                camera.getWorldDirection(_tempVec3_1); 
-                _tempVec3_1.y = 0; 
-                _tempVec3_1.normalize(); 
-                
+                camera.getWorldDirection(_tempVec3_1); _tempVec3_1.y = 0; _tempVec3_1.normalize(); 
                 _tempVec3_2.crossVectors(new THREE.Vector3(0, 1, 0), _tempVec3_1).normalize(); 
-                
                 _tempVec3_3.copy(_tempVec3_1).multiplyScalar(-moveDirection.z).addScaledVector(_tempVec3_2, -moveDirection.x).normalize();
                 
                 if (!checkWall(playerContainer.position, _tempVec3_3)) playerContainer.position.addScaledVector(_tempVec3_3, currentSpeed * dt);
-                
-                // Rotación sin new THREE.Quaternion si es posible, pero Quaternion es ligero
                 playerContainer.quaternion.slerp(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(_tempVec3_3.x, _tempVec3_3.z)), 10 * dt);
             }
             
@@ -767,20 +728,18 @@
             } else { playerContainer.position.y = propY; isGrounded = false; }
         }
 
-        // --- OPTIMIZACIÓN 6: CAMARA SIN NEW VECTOR3 ---
         function updateSmartCamera() {
             if (!playerContainer) return;
 
             if (isCinematic) {
                 const time = clock.getElapsedTime() - cinematicStartTime;
-                _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize(); // toDoor
+                _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
                 
-                // lookTarget
-                const lookTarget = _camIdeal; // reutilizamos variable
-                lookTarget.copy(playerContainer.position).add(_tempVec3_1.clone().multiplyScalar(5)); // .clone() aqui es aceptable pq es 1 vez por frame, no 4
+                const lookTarget = _camIdeal; 
+                lookTarget.copy(playerContainer.position).add(_tempVec3_1.clone().multiplyScalar(5)); 
                 lookTarget.y += 2.0;
 
-                let targetPos = _camHead; // reutilizamos
+                let targetPos = _camHead; 
 
                 if (time < 1.0) {
                     targetPos.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(3.0));
@@ -802,8 +761,6 @@
                 return;
             }
 
-            // Camara normal optimizada
-            // ideal = player + offset
             _camIdeal.set(
                 camSettings.radius * Math.sin(camSettings.phi) * Math.sin(camSettings.theta),
                 camSettings.radius * Math.cos(camSettings.phi),
@@ -811,8 +768,6 @@
             ).add(playerContainer.position);
 
             _camHead.copy(playerContainer.position).y += 1.5;
-
-            // dir = ideal - head
             _tempDir.subVectors(_camIdeal, _camHead).normalize();
 
             cameraRaycaster.set(_camHead, _tempDir); 
@@ -820,7 +775,6 @@
             const hits = cameraRaycaster.intersectObjects(collisionMeshes, true);
             const dist = hits.length > 0 ? Math.max(camSettings.minRadius, hits[0].distance - 0.2) : camSettings.radius;
             
-            // camera pos = head + dir * dist
             _tempVec3_1.copy(_camHead).addScaledVector(_tempDir, dist);
             camera.position.lerp(_tempVec3_1, 0.2);
             camera.lookAt(playerContainer.position.x, playerContainer.position.y + 1.5, playerContainer.position.z);
@@ -886,7 +840,6 @@
                 }
             }
 
-            // OPTIMIZACIÓN 7: Reducir pasos en móvil
             const steps = Math.min(isMobile ? 1 : 4, Math.ceil(delta / (1/60))); 
             for(let i=0; i<steps; i++) updatePhysics(delta/steps);
 
