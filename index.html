@@ -1,13 +1,9 @@
-{
-type: uploaded file
-fileName: index.html
-fullContent:
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, minimum-scale=1.0">
-    <title>Juego 3D - Tighter Camera</title>
+    <title>Juego 3D - Final Polish</title>
     <style>
         body { 
             margin: 0; overflow: hidden; background-color: #000; 
@@ -20,6 +16,15 @@ fullContent:
             padding: 5px 10px; border-radius: 4px;
             font-family: monospace; font-weight: bold; font-size: 14px;
             pointer-events: none; z-index: 200;
+        }
+
+        #debug-ui {
+            position: absolute; top: 10px; left: 180px;
+            background: rgba(0, 0, 50, 0.8); color: cyan; 
+            padding: 10px; border-radius: 8px; border: 1px solid cyan;
+            font-family: monospace; font-size: 11px;
+            pointer-events: none; z-index: 200;
+            width: 200px;
         }
 
         #quest-message {
@@ -101,6 +106,18 @@ fullContent:
     <div id="bar-bottom" class="cinematic-bar"></div>
 
     <div id="fps-display">FPS: 0</div>
+    
+    <div id="debug-ui">
+        <strong>CAMERA DEBUG</strong><br>
+        Pos X: <span id="dbg-x">0</span><br>
+        Pos Y: <span id="dbg-y">0</span><br>
+        Pos Z: <span id="dbg-z">0</span><br>
+        <hr style="border: 0; border-top: 1px solid cyan;">
+        Phi: <span id="dbg-phi">0</span><br>
+        Theta: <span id="dbg-theta">0</span><br>
+        Radius: <span id="dbg-rad">0</span>
+    </div>
+
     <div id="quest-message">WORK AND BE PATIENT</div>
     
     <div id="settings-ui" class="ui-element">
@@ -137,6 +154,13 @@ fullContent:
             el.innerHTML += "Error: " + e.message + "<br>";
         });
 
+        const dbgX = document.getElementById('dbg-x');
+        const dbgY = document.getElementById('dbg-y');
+        const dbgZ = document.getElementById('dbg-z');
+        const dbgPhi = document.getElementById('dbg-phi');
+        const dbgTheta = document.getElementById('dbg-theta');
+        const dbgRad = document.getElementById('dbg-rad');
+
         const _tempVec3_1 = new THREE.Vector3();
         const _tempVec3_2 = new THREE.Vector3();
         const _tempVec3_3 = new THREE.Vector3();
@@ -145,6 +169,15 @@ fullContent:
         const _camIdeal = new THREE.Vector3();
         const _camHead = new THREE.Vector3();
         const _currentLookAt = new THREE.Vector3(); 
+        
+        const _cinematicStartPos = new THREE.Vector3();
+        const _cinematicStartLook = new THREE.Vector3();
+        
+        let _returnStartRadius = 0;
+        let _returnStartPhi = 0;
+        let _returnStartTheta = 0;
+        const _returnStartLook = new THREE.Vector3();
+
         let isLookAtInitialized = false;
 
         const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -168,7 +201,10 @@ fullContent:
 
         let questState = 0; 
         let isCinematic = false;
+        let isReturning = false; 
         let cinematicStartTime = 0;
+        let returnStartTime = 0;
+        let orbsLaunched = false;
         
         const orbs = [];
         let doorsCenter = new THREE.Vector3();
@@ -218,7 +254,7 @@ fullContent:
         let isDraggingJoystick = false;
 
         const handleJoystick = (e) => {
-            if(isCinematic) return; 
+            if(isCinematic || isReturning) return; 
             if(e.type.startsWith('touch')) e.preventDefault();
             if (!isDraggingJoystick) return;
             const rect = joystickContainer.getBoundingClientRect();
@@ -245,7 +281,7 @@ fullContent:
         document.addEventListener('pointermove', (e) => { if (!isDraggingCamera) return; const deltaX = e.clientX - previousMousePosition.x; const deltaY = e.clientY - previousMousePosition.y; camSettings.theta -= deltaX * 0.008; camSettings.phi -= deltaY * 0.008; camSettings.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, camSettings.phi)); previousMousePosition = { x: e.clientX, y: e.clientY }; });
         document.addEventListener('pointerup', () => isDraggingCamera = false);
         document.addEventListener('pointercancel', () => isDraggingCamera = false);
-        document.addEventListener('keydown', (e) => { if(isCinematic) return; if(e.code==='KeyW') keyStates.w = true; if(e.code==='KeyS') keyStates.s = true; if(e.code==='KeyA') keyStates.a = true; if(e.code==='KeyD') keyStates.d = true; if(e.code==='Space') jump(); if(e.code==='KeyP') shoot(); });
+        document.addEventListener('keydown', (e) => { if(isCinematic || isReturning) return; if(e.code==='KeyW') keyStates.w = true; if(e.code==='KeyS') keyStates.s = true; if(e.code==='KeyA') keyStates.a = true; if(e.code==='KeyD') keyStates.d = true; if(e.code==='Space') jump(); if(e.code==='KeyP') shoot(); });
         document.addEventListener('keyup', (e) => { if(e.code==='KeyW') keyStates.w = false; if(e.code==='KeyS') keyStates.s = false; if(e.code==='KeyA') keyStates.a = false; if(e.code==='KeyD') keyStates.d = false; });
         const jumpBtn = document.getElementById('btn-jump'); const shootBtn = document.getElementById('btn-shoot');
         const triggerAction = (action) => (e) => { e.preventDefault(); action(); };
@@ -334,9 +370,12 @@ fullContent:
                 this.collected = false;
                 this.mesh.visible = true; 
                 this.spawnTime = 0;
+                this.launchStartTime = 0;
+                this.launchVelocity = new THREE.Vector3();
                 this.oscillationOffset = Math.random() * 100;
                 this.startCinematicPos = new THREE.Vector3();
                 this.cinematicTargetPos = new THREE.Vector3();
+                this.divergeVec = new THREE.Vector3();
             }
 
             spawnStacked(basePos, playerPos) {
@@ -367,10 +406,24 @@ fullContent:
                 }
             }
 
-            scatter() {
-                this.state = 'flying';
-                this.spawnTime = clock.getElapsedTime(); 
-                this.pickRandomTarget();
+            launch(camPos) {
+                this.state = 'launching';
+                this.launchStartTime = clock.getElapsedTime();
+                
+                // Target: The Camera (scary effect)
+                const toCam = _tempVec3_1.subVectors(camPos, this.mesh.position).normalize();
+                
+                // Set diverge vector based on ID for later
+                // 0: Left, 1: Up, 2: Right relative to camera approach
+                const up = new THREE.Vector3(0, 1, 0);
+                const right = new THREE.Vector3().crossVectors(toCam, up).normalize();
+                const trueUp = new THREE.Vector3().crossVectors(right, toCam).normalize();
+
+                if (this.id === 0) this.divergeVec.copy(right).multiplyScalar(-1); // Left
+                if (this.id === 1) this.divergeVec.copy(trueUp); // Up
+                if (this.id === 2) this.divergeVec.copy(right); // Right
+
+                this.launchVelocity.copy(toCam).multiplyScalar(20.0); // Fast!
             }
 
             pickRandomTarget() {
@@ -383,14 +436,14 @@ fullContent:
                 );
             }
 
-            update(dt, playerPos, cinematicTime) {
+            update(dt, playerPos, cinematicTime, camPos) {
                 if(this.state === 'hidden') return;
                 
                 const time = clock.getElapsedTime();
 
                 if(this.state === 'cinematic_stack') {
                     if (cinematicTime > 1.0) {
-                        const t = Math.min(1.0, (cinematicTime - 1.0) / 3.0); 
+                        const t = Math.min(1.0, (cinematicTime - 1.0) / 1.5); 
                         const ease = t * t * (3 - 2 * t); 
                         _tempVec3_1.copy(this.startCinematicPos);
                         _tempVec3_1.y += (this.id * 0.6);
@@ -401,20 +454,35 @@ fullContent:
                     return;
                 }
 
-                if(this.state === 'flying') {
-                    const isProtected = (time - this.spawnTime) < 2.0;
-                    if (!isProtected && this.mesh.material.color.getHex() === 0xff0000) {
-                        this.mesh.material.color.setHex(0x00ffff);
-                        this.light.color.setHex(0x00ffff);
+                if (this.state === 'launching') {
+                    // Check distance to camera for divergence
+                    const distToCam = this.mesh.position.distanceTo(camPos);
+                    
+                    if (distToCam < 8.0) {
+                        // Apply diverge force strongly
+                        this.launchVelocity.addScaledVector(this.divergeVec, 80.0 * dt);
                     }
 
+                    this.mesh.position.addScaledVector(this.launchVelocity, dt);
+                    if (this.mesh.position.y < 1.0) this.mesh.position.y = 1.0;
+
+                    if (time - this.launchStartTime > 1.5) {
+                        this.state = 'flying';
+                        this.mesh.material.color.setHex(0x00ffff);
+                        this.light.color.setHex(0x00ffff);
+                        this.spawnTime = time; 
+                        this.pickRandomTarget();
+                    }
+                    return;
+                }
+
+                if(this.state === 'flying') {
                     const baseDir = _tempVec3_1.subVectors(this.target, this.mesh.position).normalize();
                     const freq = 2.0; 
                     const amp = 0.5;
                     baseDir.x += Math.sin(time * freq + this.oscillationOffset) * amp;
                     baseDir.z += Math.cos(time * freq + this.oscillationOffset) * amp;
                     baseDir.y += Math.sin(time * 3.0 + this.oscillationOffset) * 0.2;
-                    
                     baseDir.normalize();
 
                     const speed = 8 * orbSpeedMultiplier; 
@@ -425,7 +493,7 @@ fullContent:
                     }
                     this.mesh.position.y = Math.max(1, Math.min(4.5, this.mesh.position.y));
 
-                    if(!isProtected && playerPos.distanceTo(this.mesh.position) < 1.5) {
+                    if(playerPos.distanceTo(this.mesh.position) < 1.5) {
                         this.state = 'following';
                         this.collected = true;
                         questOrbsCollected++;
@@ -435,12 +503,17 @@ fullContent:
         }
 
         function startQuestCinematic() {
-            if(isCinematic) return; 
+            if(isCinematic || isReturning) return; 
             
             questState = 1;
             isCinematic = true;
+            isReturning = false;
+            orbsLaunched = false;
             cinematicStartTime = clock.getElapsedTime();
             
+            _cinematicStartPos.copy(camera.position);
+            _cinematicStartLook.copy(_currentLookAt);
+
             document.body.classList.add('cinematic-mode');
             
             messageEl.style.display = 'block';
@@ -453,10 +526,41 @@ fullContent:
             joystickVector = { x:0, y:0 };
         }
 
-        function endCinematic() {
+        function triggerReturnTransition() {
             isCinematic = false;
+            isReturning = true;
+            returnStartTime = clock.getElapsedTime();
+
+            const offset = new THREE.Vector3().subVectors(camera.position, playerContainer.position);
+            const spherical = new THREE.Spherical().setFromVector3(offset);
+            
+            _returnStartRadius = spherical.radius;
+            _returnStartPhi = spherical.phi;
+            _returnStartTheta = spherical.theta;
+            _returnStartLook.copy(_currentLookAt);
+
+            const dirToStage = new THREE.Vector3().subVectors(playerContainer.position, doorsCenter).normalize();
+            dirToStage.y = 0; 
+            dirToStage.normalize();
+
+            const angle = Math.atan2(dirToStage.x, dirToStage.z);
+            playerContainer.quaternion.setFromAxisAngle(new THREE.Vector3(0,1,0), angle);
+
+            camSettings.theta = angle + Math.PI; 
+            camSettings.phi = 0.87;     
+            camSettings.radius = 4.17;  
+            camSettings.currentRadius = 4.17;
+            
+            // LAUNCH ORBS NOW if not already (should be handled in anim loop, but safe check)
+             if (!orbsLaunched) {
+                orbs.forEach(orb => orb.launch(camera.position));
+                orbsLaunched = true;
+            }
+        }
+
+        function endCinematic() {
+            isReturning = false;
             document.body.classList.remove('cinematic-mode');
-            orbs.forEach(orb => orb.scatter());
         }
 
         function resetQuest() {
@@ -659,9 +763,9 @@ fullContent:
             if (gltf.animations && gltf.animations.length > 0) { mixer = new THREE.AnimationMixer(rawCharacterMesh); mixer.clipAction(gltf.animations[0]).play(); mixer.timeScale = 0; }
         });
 
-        function jump() { if(isCinematic) return; if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } }
+        function jump() { if(isCinematic || isReturning) return; if (isGrounded) { velocityY = jumpStrength; isGrounded = false; } }
         const projectileGeo = new THREE.BoxGeometry(0.1, 0.1, 0.8); const projectileMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        function shoot() { if(isCinematic) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
+        function shoot() { if(isCinematic || isReturning) return; if (!playerContainer) return; const proj = new THREE.Mesh(projectileGeo, projectileMat); proj.position.copy(playerContainer.position).add(new THREE.Vector3(0,1.2,0)); const d = new THREE.Vector3(); playerContainer.getWorldDirection(d); proj.quaternion.copy(playerContainer.quaternion); proj.userData.velocity = d.multiplyScalar(20); proj.userData.lifeTime = 2.0; scene.add(proj); projectiles.push(proj); }
         
         function getPlayerHeight(pos, currentY) {
             if(velocityY > 0) return -999;
@@ -700,7 +804,7 @@ fullContent:
             let inputX = 0;
             let inputY = 0;
 
-            if (!isCinematic) {
+            if (!isCinematic && !isReturning) {
                 if (landingCooldown > 0) { landingCooldown -= dt; }
                 inputX = joystickVector.x; 
                 inputY = joystickVector.y;
@@ -710,7 +814,7 @@ fullContent:
                 isMoving = false;
             }
             
-            if (!isCinematic) {
+            if (!isCinematic && !isReturning) {
                 moveDirection.set(inputX, 0, inputY); 
                 const len = moveDirection.length();
                 if (len > 0.1 && landingCooldown <= 0) { 
@@ -745,7 +849,7 @@ fullContent:
                      playerContainer.position.y = THREE.MathUtils.lerp(playerContainer.position.y, floorY, 0.5);
                      velocityY = 0; isGrounded = true;
                 } else if (propY <= floorY && velocityY <= 0) { 
-                    if (!isGrounded && !isCinematic) landingCooldown = 0.2; 
+                    if (!isGrounded && !isCinematic && !isReturning) landingCooldown = 0.2; 
                     playerContainer.position.y = THREE.MathUtils.lerp(playerContainer.position.y, floorY, 0.5);
                     velocityY = 0; isGrounded = true; 
                 } else { 
@@ -760,33 +864,92 @@ fullContent:
         function updateSmartCamera() {
             if (!playerContainer) return;
 
+            // Debug UI Update
+            dbgX.innerText = camera.position.x.toFixed(2);
+            dbgY.innerText = camera.position.y.toFixed(2);
+            dbgZ.innerText = camera.position.z.toFixed(2);
+            dbgPhi.innerText = camSettings.phi.toFixed(2);
+            dbgTheta.innerText = camSettings.theta.toFixed(2);
+            dbgRad.innerText = camSettings.currentRadius.toFixed(2);
+
+            if (isReturning) {
+                const time = clock.getElapsedTime() - returnStartTime;
+                const duration = 2.0; 
+                
+                if (time < duration) {
+                    const t = time / duration;
+                    const smoothT = t * t * (3 - 2 * t);
+
+                    // --- TIGHTER ORBIT FIX (Anti-Clipping) ---
+                    // By making the radius interpolate faster (x3.0), the camera hugs the player
+                    // instantly before swinging around, avoiding walls.
+                    const radiusT = Math.min(1.0, smoothT * 3.0); 
+                    const curRadius = THREE.MathUtils.lerp(_returnStartRadius, camSettings.radius, radiusT);
+                    
+                    const curPhi = THREE.MathUtils.lerp(_returnStartPhi, camSettings.phi, smoothT);
+                    
+                    let startTheta = _returnStartTheta;
+                    let endTheta = camSettings.theta;
+                    if (endTheta - startTheta > Math.PI) endTheta -= Math.PI * 2;
+                    if (endTheta - startTheta < -Math.PI) endTheta += Math.PI * 2;
+                    const curTheta = THREE.MathUtils.lerp(startTheta, endTheta, smoothT);
+
+                    const y = curRadius * Math.cos(curPhi);
+                    const x = curRadius * Math.sin(curPhi) * Math.sin(curTheta);
+                    const z = curRadius * Math.sin(curPhi) * Math.cos(curTheta);
+
+                    _camIdeal.set(x, y, z).add(playerContainer.position);
+
+                    _camHead.copy(playerContainer.position).y += 1.5; 
+                    const lerpedLook = _tempVec3_1.lerpVectors(_returnStartLook, _camHead, smoothT);
+
+                    camera.position.copy(_camIdeal);
+                    camera.lookAt(lerpedLook);
+                } else {
+                    endCinematic();
+                }
+                return;
+            }
+
             if (isCinematic) {
                 const time = clock.getElapsedTime() - cinematicStartTime;
-                _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
                 
-                const lookTarget = _camIdeal; 
-                lookTarget.copy(playerContainer.position).add(_tempVec3_1.clone().multiplyScalar(5)); 
-                lookTarget.y += 2.0;
+                const toDoorDir = _tempVec3_1.subVectors(doorsCenter, playerContainer.position).normalize();
+                
+                const view1Pos = _tempVec3_2.copy(playerContainer.position).sub(toDoorDir.clone().multiplyScalar(3.0)).add(new THREE.Vector3(0, 1.5, 0));
+                
+                // Y + 6.0 to clear stairs
+                const view2Pos = _tempVec3_3.copy(playerContainer.position).sub(toDoorDir.clone().multiplyScalar(15.0)).add(new THREE.Vector3(0, 6.0, 0));
 
-                let targetPos = _camHead; 
-
-                if (time < 1.0) {
-                    targetPos.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(3.0));
-                    targetPos.y += 1.5;
-                } else if (time < 3.5) {
-                    const t = (time - 1.0) / 2.5; 
-                    const startPos = _tempVec3_2.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(3.0)).add(new THREE.Vector3(0, 1.5, 0));
-                    const endPos = _tempVec3_3.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
-                    targetPos.lerpVectors(startPos, endPos, t); 
-                } else {
-                     targetPos.copy(playerContainer.position).sub(_tempVec3_1.clone().multiplyScalar(10.0)).add(new THREE.Vector3(0, 6.0, 0));
-                     if (time > 4.5) {
-                         endCinematic();
-                         return; 
-                     }
+                const lookAtDoor = _tempOrigin.copy(doorsCenter).add(new THREE.Vector3(0, 2, 0));
+                
+                if (time < 2.0) {
+                    const t = time / 2.0; 
+                    const smoothT = t * t * (3 - 2 * t);
+                    camera.position.lerpVectors(_cinematicStartPos, view1Pos, smoothT);
+                    camera.lookAt(_tempDir.lerpVectors(_cinematicStartLook, lookAtDoor, smoothT));
                 }
-                camera.position.lerp(targetPos, 0.1);
-                camera.lookAt(lookTarget);
+                else if (time < 5.0) {
+                    const t = (time - 2.0) / 3.0;
+                    const smoothT = t * t * (3 - 2 * t);
+                    camera.position.lerpVectors(view1Pos, view2Pos, smoothT);
+                    camera.lookAt(lookAtDoor);
+                }
+                else {
+                    camera.position.copy(view2Pos);
+                    camera.lookAt(lookAtDoor);
+
+                    // --- DELAYED LAUNCH ---
+                    // Orbs wait for camera to arrive (at 5.0s) then LAUNCH at camera
+                    if (!orbsLaunched) {
+                        orbs.forEach(orb => orb.launch(camera.position));
+                        orbsLaunched = true;
+                    }
+
+                    if (time > 6.5) {
+                        triggerReturnTransition(); 
+                    }
+                }
                 return;
             }
 
@@ -817,7 +980,6 @@ fullContent:
             
             _camHead.copy(playerContainer.position).y += 1.5; 
             
-            // AJUSTE CÁMARA: De 0.15 a 0.25 para un seguimiento más cerrado
             camera.position.lerp(_camIdeal, 0.25);
 
             const targetLook = _tempVec3_3.copy(playerContainer.position);
@@ -855,7 +1017,7 @@ fullContent:
                     if(isCinematic) cinematicTime = clock.getElapsedTime() - cinematicStartTime;
 
                     orbs.forEach((orb, index) => {
-                        orb.update(delta, playerContainer.position, cinematicTime);
+                        orb.update(delta, playerContainer.position, cinematicTime, camera.position);
                         if(orb.collected) {
                             collectedCount++;
                             const leaderPos = (index === 0) ? playerContainer.position : orbs[index-1].mesh.position;
@@ -898,7 +1060,7 @@ fullContent:
             }
 
             if (playerContainer) {
-                if (mixer) { mixer.timeScale = (isGrounded && isMoving && !isCinematic) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
+                if (mixer) { mixer.timeScale = (isGrounded && isMoving && !isCinematic && !isReturning) ? currentSpeed / maxMoveSpeed : 0; mixer.update(delta); }
                 updateSmartCamera();
             }
             
@@ -923,4 +1085,3 @@ fullContent:
     </script>
 </body>
 </html>
-}
